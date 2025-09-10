@@ -25,7 +25,7 @@ app.use(express.json());
 
 // Doma testnet subgraph endpoint with real API key
 const DOMA_SUBGRAPH_URL = 'https://api-testnet.doma.xyz/graphql';
-const DOMA_API_KEY = process.env.DOMA_API_KEY || 'v1.2ab2b25922189b0a4eae6015f4e4808a2d8b40dec8c9d04e29281a82d9f2f0f1';
+const DOMA_API_KEY = process.env.API_KEY || process.env.DOMA_API_KEY || 'v1.2ab2b25922189b0a4eae6015f4e4808a2d8b40dec8c9d04e29281a82d9f2f0f1';
 
 // Multi-chain support - Doma state sync endpoints
 const CHAIN_ENDPOINTS = {
@@ -38,17 +38,19 @@ const CHAIN_ENDPOINTS = {
 // Doma testnet RPC and contract addresses
 const DOMA_TESTNET_RPC = 'https://rpc-testnet.doma.xyz';
 
-// Real tokenized domains for testing
-const REAL_TOKENIZED_DOMAINS = [
-  'johnify.io',
-  'johnventures.io', 
-  'insightstream.io',
-  'johnica.io',
-  'insightwise.io',
-  'estatewise.io',
-  'coolrealm.io',
-  'orgrealm.io'
-];
+// Real tokenized domains for testing - read from environment or use defaults
+const REAL_TOKENIZED_DOMAINS = process.env.DOMAINS_LIST 
+  ? process.env.DOMAINS_LIST.split(',')
+  : [
+      'johnify.io',
+      'johnventures.io', 
+      'insightstream.io',
+      'johnica.io',
+      'insightwise.io',
+      'estatewise.io',
+      'coolrealm.io',
+      'orgrealm.io'
+    ];
 const DOMA_CONTRACTS = {
   testnet: {
     registry: '0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e', // ENS Registry
@@ -1220,8 +1222,10 @@ app.get('/health', (req, res) => {
     supportedChains: Object.keys(CHAIN_ENDPOINTS),
     wallet: wallet ? wallet.address : null,
     onChainActions: !!wallet,
-    realDomains: REAL_TOKENIZED_DOMAINS.length,
-    apiKeyConfigured: !!DOMA_API_KEY
+    domains: REAL_TOKENIZED_DOMAINS.length,
+    api: DOMA_API_KEY ? 'active' : 'inactive',
+    realDomains: REAL_TOKENIZED_DOMAINS,
+    environment: process.env.NODE_ENV || 'development'
   });
 });
 
