@@ -6,10 +6,21 @@ const cors = require('cors');
 const { ethers } = require('ethers');
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3000;
+
+// CORS configuration for frontend deployment
+const corsOptions = {
+  origin: [
+    'http://localhost:3001',
+    'https://domainsight-frontend.vercel.app',
+    'https://domainsight.vercel.app'
+  ],
+  credentials: true,
+  optionsSuccessStatus: 200
+};
 
 // Middleware
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Doma testnet subgraph endpoint
@@ -1166,10 +1177,10 @@ app.get('/get-alerts', async (req, res) => {
   }
 });
 
-// Health check endpoint
+// Health check endpoint for Fly.io
 app.get('/health', (req, res) => {
   res.json({ 
-    status: 'healthy', 
+    status: 'ok',
     timestamp: new Date().toISOString(),
     model: 'trained',
     multiChain: true,
