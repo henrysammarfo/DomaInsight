@@ -34,19 +34,19 @@ if not exist "frontend\node_modules" (
 REM Start both servers
 echo Starting servers...
 start "DomaInsight Backend" cmd /k "cd backend && npm start"
-timeout /t 3 /nobreak >nul
+timeout /t 5 /nobreak >nul
 start "DomaInsight Frontend" cmd /k "cd frontend && npm start"
 
 echo.
 echo ✅ DomaInsight is starting up!
 echo.
-echo Backend API: http://localhost:3001
-echo Frontend App: http://localhost:3000
+echo Backend API: http://localhost:3000
+echo Frontend App: http://localhost:3001
 echo.
 echo Press any key to open the frontend in your browser...
 pause >nul
 
-start http://localhost:3000
+start http://localhost:3001
 
 echo.
 echo 🚀 DomaInsight is now running!

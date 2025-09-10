@@ -1,6 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { ApolloClient, InMemoryCache, ApolloProvider, gql, useQuery } from '@apollo/client';
 import { ethers } from 'ethers';
+import { 
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  BarChart, Bar, PieChart, Pie, Cell, AreaChart, Area
+} from 'recharts';
+import WalletConnect from './components/WalletConnect';
 import './App.css';
 
 // Apollo Client setup for Doma subgraph
@@ -39,8 +44,11 @@ const GET_TRENDS = gql`
   }
 `;
 
+// Backend API base URL
+const API_BASE = 'http://localhost:3000';
+
 // Domain Scoring Component
-function DomainScorer() {
+function DomainScorer({ onScoreUpdate }) {
   const [domainName, setDomainName] = useState('');
   const [score, setScore] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -54,7 +62,7 @@ function DomainScorer() {
     setError(null);
     
     try {
-      const response = await fetch('http://localhost:3001/score-domain', {
+      const response = await fetch(`${API_BASE}/score-domain`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -67,6 +75,13 @@ function DomainScorer() {
       if (response.ok) {
         setScore(data);
         setRecommendations(data.recommendations || []);
+        onScoreUpdate(data);
+        
+        // Log potential transactions for impact demo
+        const potentialTxns = data.recommendations?.filter(rec => 
+          ['tokenize', 'auction', 'renew', 'transfer'].includes(rec.action)
+        ).length || 0;
+        console.log(`Potential txns: ${potentialTxns}`);
       } else {
         setError(data.error || 'Failed to score domain');
       }
@@ -78,10 +93,10 @@ function DomainScorer() {
   };
 
   const getScoreColor = (score) => {
-    if (score >= 80) return 'text-green-600 bg-green-100';
-    if (score >= 60) return 'text-yellow-600 bg-yellow-100';
-    if (score >= 40) return 'text-orange-600 bg-orange-100';
-    return 'text-red-600 bg-red-100';
+    if (score >= 80) return 'text-green-600 bg-green-100 border-green-200';
+    if (score >= 60) return 'text-yellow-600 bg-yellow-100 border-yellow-200';
+    if (score >= 40) return 'text-orange-600 bg-orange-100 border-orange-200';
+    return 'text-red-600 bg-red-100 border-red-200';
   };
 
   const getScoreLabel = (score) => {
@@ -92,29 +107,29 @@ function DomainScorer() {
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-lg p-6">
-      <h2 className="text-2xl font-bold text-gray-800 mb-4">Domain Scoring</h2>
+    <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
+      <h2 className="text-2xl font-bold text-gray-800 mb-6">Domain Scoring</h2>
       
-      <div className="flex gap-4 mb-6">
+      <div className="flex flex-col sm:flex-row gap-4 mb-6">
         <input
           type="text"
           value={domainName}
           onChange={(e) => setDomainName(e.target.value)}
           placeholder="Enter domain name (e.g., crypto.eth)"
-          className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+          className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
           onKeyPress={(e) => e.key === 'Enter' && scoreDomain()}
         />
         <button
           onClick={scoreDomain}
           disabled={loading}
-          className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-semibold text-lg transition-colors"
         >
           {loading ? 'Scoring...' : 'Score Domain'}
         </button>
       </div>
 
       {error && (
-        <div className="mb-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded">
+        <div className="mb-6 p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg">
           {error}
         </div>
       )}
@@ -123,63 +138,156 @@ function DomainScorer() {
         <div className="space-y-6">
           {/* Score Display */}
           <div className="text-center">
-            <div className={`inline-flex items-center justify-center w-24 h-24 rounded-full text-3xl font-bold ${getScoreColor(score.score)}`}>
+            <div className={`inline-flex items-center justify-center w-32 h-32 rounded-full text-4xl font-bold border-4 ${getScoreColor(score.score)}`}>
               {score.score}
             </div>
-            <p className="mt-2 text-lg font-semibold text-gray-700">
+            <p className="mt-4 text-xl font-semibold text-gray-700">
               {getScoreLabel(score.score)} Quality
             </p>
-            <p className="text-sm text-gray-500">{score.domainName}</p>
+            <p className="text-lg text-gray-500">{score.domainName}</p>
           </div>
 
           {/* Features Breakdown */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="text-center p-3 bg-gray-50 rounded-lg">
-              <div className="text-2xl font-bold text-gray-800">{score.features.length}</div>
-              <div className="text-sm text-gray-600">Length</div>
+            <div className="text-center p-4 bg-gray-50 rounded-lg border">
+              <div className="text-3xl font-bold text-gray-800">{score.features.length}</div>
+              <div className="text-sm text-gray-600 font-medium">Length</div>
             </div>
-            <div className="text-center p-3 bg-gray-50 rounded-lg">
-              <div className="text-2xl font-bold text-gray-800">
+            <div className="text-center p-4 bg-gray-50 rounded-lg border">
+              <div className="text-3xl font-bold text-gray-800">
                 {score.features.hasKeyword ? '✓' : '✗'}
               </div>
-              <div className="text-sm text-gray-600">Keyword</div>
+              <div className="text-sm text-gray-600 font-medium">Keyword</div>
             </div>
-            <div className="text-center p-3 bg-gray-50 rounded-lg">
-              <div className="text-2xl font-bold text-gray-800">
+            <div className="text-center p-4 bg-gray-50 rounded-lg border">
+              <div className="text-3xl font-bold text-gray-800">
                 {Math.round(score.features.tldRarity * 100)}%
               </div>
-              <div className="text-sm text-gray-600">TLD Rarity</div>
+              <div className="text-sm text-gray-600 font-medium">TLD Rarity</div>
             </div>
-            <div className="text-center p-3 bg-gray-50 rounded-lg">
-              <div className="text-2xl font-bold text-gray-800">{score.features.txnHistory}</div>
-              <div className="text-sm text-gray-600">Activities</div>
+            <div className="text-center p-4 bg-gray-50 rounded-lg border">
+              <div className="text-3xl font-bold text-gray-800">{score.features.txnHistory}</div>
+              <div className="text-sm text-gray-600 font-medium">Activities</div>
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
-          {/* Recommendations */}
-          {recommendations.length > 0 && (
-            <div>
-              <h3 className="text-lg font-semibold text-gray-800 mb-3">Recommendations</h3>
-              <div className="space-y-2">
-                {recommendations.map((rec, index) => (
-                  <div key={index} className={`p-3 rounded-lg border-l-4 ${
-                    rec.priority === 'high' ? 'border-red-500 bg-red-50' :
-                    rec.priority === 'medium' ? 'border-yellow-500 bg-yellow-50' :
-                    'border-blue-500 bg-blue-50'
-                  }`}>
-                    <div className="font-medium text-gray-800">{rec.title}</div>
-                    <div className="text-sm text-gray-600">{rec.description}</div>
-                    <button className="mt-2 px-3 py-1 bg-primary-600 text-white text-sm rounded hover:bg-primary-700">
-                      {rec.action === 'tokenize' ? 'Tokenize' :
-                       rec.action === 'auction' ? 'List Auction' :
-                       rec.action === 'renew' ? 'Renew' :
-                       'View Details'}
-                    </button>
+// Recommendations Component
+function Recommendations({ score, onActionTrigger, walletAddress }) {
+  const [recommendations, setRecommendations] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (score) {
+      fetchRecommendations();
+    }
+  }, [score]);
+
+  const fetchRecommendations = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/recommend-actions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          domainName: score.domainName,
+          score: score.score,
+          features: score.features
+        }),
+      });
+      
+      const data = await response.json();
+      if (response.ok) {
+        setRecommendations(data.recommendations || []);
+      }
+    } catch (error) {
+      console.error('Failed to fetch recommendations:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAction = async (action, domainName) => {
+    if (!walletAddress) {
+      alert('Please connect your wallet to perform on-chain actions');
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE}/trigger-action`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action,
+          domainName,
+          chain: 'testnet'
+        }),
+      });
+      
+      const data = await response.json();
+      if (response.ok) {
+        onActionTrigger(data);
+        console.log(`Action triggered: ${action} for ${domainName}`);
+        console.log(`Transaction hash: ${data.transactionHash}`);
+        
+        // Log potential transaction for impact demo
+        console.log(`Potential txns: 1 (${action} action executed)`);
+      } else {
+        alert(`Action failed: ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Action failed:', error);
+      alert('Action failed: ' + error.message);
+    }
+  };
+
+  if (!score) return null;
+
+  return (
+    <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
+      <h3 className="text-xl font-bold text-gray-800 mb-4">Smart Recommendations</h3>
+      
+      {loading ? (
+        <div className="text-center py-8">Loading recommendations...</div>
+      ) : (
+        <div className="space-y-4">
+          {recommendations.map((rec, index) => (
+            <div key={index} className={`p-4 rounded-lg border-l-4 ${
+              rec.priority === 'high' ? 'border-red-500 bg-red-50' :
+              rec.priority === 'medium' ? 'border-yellow-500 bg-yellow-50' :
+              'border-blue-500 bg-blue-50'
+            }`}>
+              <div className="flex justify-between items-start">
+                <div className="flex-1">
+                  <h4 className="font-semibold text-gray-800">{rec.title}</h4>
+                  <p className="text-sm text-gray-600 mt-1">{rec.description}</p>
+                  <div className="flex gap-4 mt-2 text-xs text-gray-500">
+                    <span>Est. Value: {rec.estimatedValue} ETH</span>
+                    <span>Gas: {rec.gasEstimate}</span>
+                    <span>ROI: {rec.roi}</span>
                   </div>
-                ))}
+                </div>
+                <button
+                  onClick={() => handleAction(rec.action, score.domainName)}
+                  className="ml-4 px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  {rec.action === 'tokenize' ? 'Tokenize' :
+                   rec.action === 'auction' ? 'List Auction' :
+                   rec.action === 'renew' ? 'Renew' :
+                   rec.action === 'transfer' ? 'Transfer' :
+                   'View Details'}
+                </button>
               </div>
             </div>
-          )}
+          ))}
         </div>
       )}
     </div>
@@ -197,7 +305,7 @@ function TrendAnalytics() {
     setError(null);
     
     try {
-      const response = await fetch('http://localhost:3001/get-trends');
+      const response = await fetch(`${API_BASE}/get-trends`);
       const data = await response.json();
       
       if (response.ok) {
@@ -220,64 +328,204 @@ function TrendAnalytics() {
   if (error) return <div className="text-center py-8 text-red-600">{error}</div>;
   if (!trends) return null;
 
+  // Prepare chart data
+  const tldData = trends.tldStats?.slice(0, 10).map(tld => ({
+    name: tld.tld,
+    domains: tld.count,
+    avgScore: Math.round(tld.avgScore)
+  })) || [];
+
+  const scoreDistribution = [
+    { name: 'High (70+)', value: trends.scoreDistribution?.high || 0, color: '#10b981' },
+    { name: 'Medium (40-69)', value: trends.scoreDistribution?.medium || 0, color: '#f59e0b' },
+    { name: 'Low (<40)', value: trends.scoreDistribution?.low || 0, color: '#ef4444' }
+  ];
+
   return (
-    <div className="bg-white rounded-lg shadow-lg p-6">
-      <h2 className="text-2xl font-bold text-gray-800 mb-4">Market Trends</h2>
+    <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
+      <h2 className="text-2xl font-bold text-gray-800 mb-6">Market Trends</h2>
       
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-        <div className="text-center p-4 bg-blue-50 rounded-lg">
-          <div className="text-3xl font-bold text-blue-600">{trends.totalDomains}</div>
-          <div className="text-sm text-gray-600">Total Domains</div>
+      {/* Key Metrics */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="text-center p-6 bg-blue-50 rounded-lg border">
+          <div className="text-4xl font-bold text-blue-600">{trends.totalDomains}</div>
+          <div className="text-sm text-gray-600 font-medium">Total Domains</div>
         </div>
-        <div className="text-center p-4 bg-green-50 rounded-lg">
-          <div className="text-3xl font-bold text-green-600">{trends.insights.totalActivity}</div>
-          <div className="text-sm text-gray-600">Total Activities</div>
+        <div className="text-center p-6 bg-green-50 rounded-lg border">
+          <div className="text-4xl font-bold text-green-600">{trends.insights.totalActivity}</div>
+          <div className="text-sm text-gray-600 font-medium">Total Activities</div>
         </div>
-        <div className="text-center p-4 bg-purple-50 rounded-lg">
-          <div className="text-3xl font-bold text-purple-600">{trends.insights.avgScore}</div>
-          <div className="text-sm text-gray-600">Avg Score</div>
-        </div>
-      </div>
-
-      {/* Top TLDs */}
-      <div className="mb-6">
-        <h3 className="text-lg font-semibold text-gray-800 mb-3">Top TLDs</h3>
-        <div className="space-y-2">
-          {trends.tldStats.slice(0, 5).map((tld, index) => (
-            <div key={index} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-              <div className="font-medium">.{tld.tld}</div>
-              <div className="text-sm text-gray-600">
-                {tld.count} domains • Avg Score: {Math.round(tld.avgScore)}
-              </div>
-            </div>
-          ))}
+        <div className="text-center p-6 bg-purple-50 rounded-lg border">
+          <div className="text-4xl font-bold text-purple-600">{trends.insights.avgScore}</div>
+          <div className="text-sm text-gray-600 font-medium">Avg Score</div>
         </div>
       </div>
 
-      {/* Score Distribution */}
-      <div>
-        <h3 className="text-lg font-semibold text-gray-800 mb-3">Score Distribution</h3>
-        <div className="grid grid-cols-3 gap-4">
-          <div className="text-center p-3 bg-green-100 rounded-lg">
-            <div className="text-2xl font-bold text-green-600">{trends.scoreDistribution.high}</div>
-            <div className="text-sm text-gray-600">High (70+)</div>
-          </div>
-          <div className="text-center p-3 bg-yellow-100 rounded-lg">
-            <div className="text-2xl font-bold text-yellow-600">{trends.scoreDistribution.medium}</div>
-            <div className="text-sm text-gray-600">Medium (40-69)</div>
-          </div>
-          <div className="text-center p-3 bg-red-100 rounded-lg">
-            <div className="text-2xl font-bold text-red-600">{trends.scoreDistribution.low}</div>
-            <div className="text-sm text-gray-600">Low (<40)</div>
-          </div>
+      {/* Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* TLD Distribution */}
+        <div>
+          <h3 className="text-lg font-semibold text-gray-800 mb-4">Top TLDs</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={tldData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="name" />
+              <YAxis />
+              <Tooltip />
+              <Bar dataKey="domains" fill="#3b82f6" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Score Distribution */}
+        <div>
+          <h3 className="text-lg font-semibold text-gray-800 mb-4">Score Distribution</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <PieChart>
+              <Pie
+                data={scoreDistribution}
+                cx="50%"
+                cy="50%"
+                labelLine={false}
+                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                outerRadius={80}
+                fill="#8884d8"
+                dataKey="value"
+              >
+                {scoreDistribution.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={entry.color} />
+                ))}
+              </Pie>
+              <Tooltip />
+            </PieChart>
+          </ResponsiveContainer>
         </div>
       </div>
     </div>
   );
 }
 
+// Alerts Component
+function Alerts() {
+  const [alerts, setAlerts] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [filter, setFilter] = useState('all');
+
+  const fetchAlerts = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/get-alerts`);
+      const data = await response.json();
+      
+      if (response.ok) {
+        setAlerts(data.alerts || []);
+      }
+    } catch (error) {
+      console.error('Failed to fetch alerts:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAlerts();
+    const interval = setInterval(fetchAlerts, 30000); // Poll every 30 seconds
+    return () => clearInterval(interval);
+  }, []);
+
+  const filteredAlerts = alerts.filter(alert => {
+    if (filter === 'all') return true;
+    if (filter === 'high') return alert.priority === 'high';
+    if (filter === 'medium') return alert.priority === 'medium';
+    if (filter === 'low') return alert.priority === 'low';
+    return alert.tld === filter;
+  });
+
+  return (
+    <div className="bg-white rounded-xl shadow-lg p-6">
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold text-gray-800">Domain Alerts</h2>
+        <select
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="all">All Alerts</option>
+          <option value="high">High Priority</option>
+          <option value="medium">Medium Priority</option>
+          <option value="low">Low Priority</option>
+        </select>
+      </div>
+
+      {loading ? (
+        <div className="text-center py-8">Loading alerts...</div>
+      ) : (
+        <div className="space-y-4">
+          {filteredAlerts.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">No alerts found</div>
+          ) : (
+            filteredAlerts.map((alert, index) => (
+              <div key={index} className={`p-4 rounded-lg border-l-4 ${
+                alert.priority === 'high' ? 'border-red-500 bg-red-50' :
+                alert.priority === 'medium' ? 'border-yellow-500 bg-yellow-50' :
+                'border-blue-500 bg-blue-50'
+              }`}>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h4 className="font-semibold text-gray-800">{alert.domainName}</h4>
+                    <p className="text-sm text-gray-600">
+                      {alert.type === 'expiring_high_score' ? 
+                        `Expires in ${alert.daysUntilExpiry} days` : 
+                        alert.type
+                      }
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Score: {alert.score} | TLD: .{alert.tld} | {new Date(alert.timestamp).toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <div className={`px-2 py-1 rounded text-xs font-medium ${
+                      alert.priority === 'high' ? 'bg-red-100 text-red-800' :
+                      alert.priority === 'medium' ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-blue-100 text-blue-800'
+                    }`}>
+                      {alert.priority}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Main App Component
 function App() {
+  const [currentScore, setCurrentScore] = useState(null);
+  const [actionHistory, setActionHistory] = useState([]);
+  const [walletAddress, setWalletAddress] = useState('');
+
+  const handleScoreUpdate = (score) => {
+    setCurrentScore(score);
+  };
+
+  const handleActionTrigger = (action) => {
+    setActionHistory(prev => [action, ...prev.slice(0, 9)]); // Keep last 10 actions
+  };
+
+  const handleWalletConnect = (address) => {
+    setWalletAddress(address);
+    console.log('Wallet connected:', address);
+  };
+
+  const handleWalletDisconnect = () => {
+    setWalletAddress('');
+    console.log('Wallet disconnected');
+  };
+
   return (
     <ApolloProvider client={client}>
       <div className="min-h-screen bg-gray-100">
@@ -289,8 +537,14 @@ function App() {
                 <h1 className="text-3xl font-bold text-gray-900">DomaInsight</h1>
                 <p className="text-gray-600">AI-Driven Domain Scoring & Predictive Analytics</p>
               </div>
-              <div className="text-sm text-gray-500">
-                Doma Protocol Hackathon • Track 4
+              <div className="flex items-center space-x-4">
+                <div className="text-sm text-gray-500">
+                  Doma Protocol Hackathon • Track 4
+                </div>
+                <WalletConnect 
+                  onWalletConnect={handleWalletConnect}
+                  onWalletDisconnect={handleWalletDisconnect}
+                />
               </div>
             </div>
           </div>
@@ -298,10 +552,42 @@ function App() {
 
         {/* Main Content */}
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <DomainScorer />
-            <TrendAnalytics />
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Left Column - Domain Scoring & Recommendations */}
+            <div className="lg:col-span-2 space-y-8">
+              <DomainScorer onScoreUpdate={handleScoreUpdate} />
+              <Recommendations 
+                score={currentScore} 
+                onActionTrigger={handleActionTrigger}
+                walletAddress={walletAddress}
+              />
+            </div>
+
+            {/* Right Column - Trends & Alerts */}
+            <div className="space-y-8">
+              <TrendAnalytics />
+              <Alerts />
+            </div>
           </div>
+
+          {/* Action History */}
+          {actionHistory.length > 0 && (
+            <div className="mt-8 bg-white rounded-xl shadow-lg p-6">
+              <h3 className="text-xl font-bold text-gray-800 mb-4">Recent Actions</h3>
+              <div className="space-y-2">
+                {actionHistory.map((action, index) => (
+                  <div key={index} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                    <div>
+                      <span className="font-medium">{action.action}</span> - {action.domainName}
+                    </div>
+                    <div className="text-sm text-gray-500">
+                      {action.transactionHash ? `Tx: ${action.transactionHash.slice(0, 10)}...` : 'Pending'}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </main>
 
         {/* Footer */}
@@ -310,11 +596,11 @@ function App() {
             <div className="text-center text-gray-500 text-sm">
               <p>Built for Doma Protocol Hackathon • Powered by AI & Real On-Chain Data</p>
               <p className="mt-2">
-                <a href="https://docs.doma.xyz" className="text-primary-600 hover:text-primary-700">
+                <a href="https://docs.doma.xyz" className="text-blue-600 hover:text-blue-700">
                   Doma Documentation
                 </a>
                 {' • '}
-                <a href="https://start.doma.xyz" className="text-primary-600 hover:text-primary-700">
+                <a href="https://start.doma.xyz" className="text-blue-600 hover:text-blue-700">
                   Testnet
                 </a>
               </p>
