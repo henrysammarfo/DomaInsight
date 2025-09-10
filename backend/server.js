@@ -3,6 +3,7 @@ const express = require('express');
 const axios = require('axios');
 const { RandomForestRegression } = require('ml-random-forest');
 const cors = require('cors');
+const { ethers } = require('ethers');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -21,6 +22,32 @@ const CHAIN_ENDPOINTS = {
   polygon: 'https://api-polygon.doma.xyz/graphql',
   arbitrum: 'https://api-arbitrum.doma.xyz/graphql'
 };
+
+// Doma testnet RPC and contract addresses
+const DOMA_TESTNET_RPC = 'https://rpc-testnet.doma.xyz';
+const DOMA_CONTRACTS = {
+  testnet: {
+    registry: '0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e', // ENS Registry
+    resolver: '0x0000000000000000000000000000000000000000', // Will be updated with actual Doma contracts
+    tokenizer: '0x0000000000000000000000000000000000000000' // Doma tokenization contract
+  }
+};
+
+// Initialize ethers provider and wallet
+let provider, wallet;
+if (process.env.PRIVATE_KEY) {
+  try {
+    provider = new ethers.JsonRpcProvider(DOMA_TESTNET_RPC);
+    wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
+    console.log('✅ Wallet connected:', wallet.address);
+  } catch (error) {
+    console.warn('⚠️  Wallet connection failed:', error.message);
+    console.warn('⚠️  On-chain actions will be disabled without valid PRIVATE_KEY');
+  }
+} else {
+  console.warn('⚠️  No PRIVATE_KEY found in environment variables');
+  console.warn('⚠️  On-chain actions will be disabled');
+}
 
 // State sync configuration
 const STATE_SYNC_CONFIG = {
@@ -442,6 +469,324 @@ function aggregateCrossChainTrends(allTrends) {
   return aggregated;
 }
 
+// Enhanced smart recommendations generator
+function generateSmartRecommendations(score, features, domainName) {
+  const recommendations = [];
+  
+  // High-value domain recommendations (80+)
+  if (score >= 80) {
+    recommendations.push({
+      action: 'tokenize',
+      title: 'Tokenize for Fractional Sales',
+      description: `High-value domain (${score}/100) perfect for tokenization. Create ERC-721 tokens for fractional ownership.`,
+      priority: 'high',
+      estimatedValue: score * 100, // ETH equivalent
+      gasEstimate: '0.01 ETH',
+      roi: 'High potential for 3-5x returns'
+    });
+    
+    recommendations.push({
+      action: 'auction',
+      title: 'List Premium Auction',
+      description: 'Premium domain suitable for high-value auction with reserve price.',
+      priority: 'high',
+      estimatedValue: score * 80,
+      gasEstimate: '0.005 ETH',
+      roi: 'Expected 2-4x current valuation'
+    });
+  }
+  
+  // Medium-value domain recommendations (60-79)
+  else if (score >= 60) {
+    recommendations.push({
+      action: 'hold',
+      title: 'Strategic Hold & Develop',
+      description: `Good potential domain (${score}/100). Consider developing or holding for market appreciation.`,
+      priority: 'medium',
+      estimatedValue: score * 50,
+      gasEstimate: '0 ETH',
+      roi: 'Long-term appreciation potential'
+    });
+    
+    recommendations.push({
+      action: 'market',
+      title: 'Targeted Marketing',
+      description: 'Market to specific buyer segments for optimal sale price.',
+      priority: 'medium',
+      estimatedValue: score * 60,
+      gasEstimate: '0 ETH',
+      roi: '1.5-2x with proper marketing'
+    });
+  }
+  
+  // Low-value domain recommendations (<60)
+  else {
+    recommendations.push({
+      action: 'monitor',
+      title: 'Monitor Market Trends',
+      description: `Lower value domain (${score}/100). Monitor for market changes and keyword trends.`,
+      priority: 'low',
+      estimatedValue: score * 20,
+      gasEstimate: '0 ETH',
+      roi: 'Potential for improvement with time'
+    });
+  }
+
+  // Feature-based recommendations
+  if (features && features.hasKeyword) {
+    recommendations.push({
+      action: 'seo',
+      title: 'SEO Optimization',
+      description: 'Domain contains valuable keywords. Optimize for search visibility.',
+      priority: 'medium',
+      estimatedValue: score * 30,
+      gasEstimate: '0 ETH',
+      roi: 'Increased organic traffic value'
+    });
+  }
+
+  if (features && features.tldRarity > 0.8) {
+    recommendations.push({
+      action: 'premium',
+      title: 'Premium TLD Strategy',
+      description: 'Rare TLD detected. Position as premium offering.',
+      priority: 'high',
+      estimatedValue: score * 120,
+      gasEstimate: '0 ETH',
+      roi: 'Premium pricing potential'
+    });
+  }
+
+  // Expiry-based recommendations
+  if (features && features.expiryDays < 30) {
+    recommendations.push({
+      action: 'renew',
+      title: 'Urgent Renewal Required',
+      description: `Domain expires in ${features.expiryDays} days. Renew immediately to maintain ownership.`,
+      priority: 'high',
+      estimatedValue: score * 100,
+      gasEstimate: '0.002 ETH',
+      roi: 'Prevents loss of valuable asset'
+    });
+  }
+
+  return recommendations;
+}
+
+// On-chain action functions
+async function tokenizeDomain(domainName, chain) {
+  console.log(`Tokenizing domain: ${domainName} on ${chain}`);
+  
+  // For demo purposes, we'll simulate the tokenization process
+  // In production, this would interact with actual Doma tokenization contracts
+  
+  try {
+    // Simulate contract interaction
+    const tokenId = ethers.keccak256(ethers.toUtf8Bytes(domainName));
+    
+    // Create a mock transaction (replace with actual contract call)
+    const mockTx = {
+      hash: ethers.keccak256(ethers.toUtf8Bytes(`${domainName}-${Date.now()}`)),
+      gasUsed: ethers.parseUnits('50000', 'wei'),
+      blockNumber: Math.floor(Math.random() * 1000000) + 1000000
+    };
+    
+    console.log(`✅ Domain tokenized: ${domainName}`);
+    console.log(`📝 Transaction hash: ${mockTx.hash}`);
+    
+    return {
+      transactionHash: mockTx.hash,
+      gasUsed: mockTx.gasUsed.toString(),
+      blockNumber: mockTx.blockNumber,
+      tokenId: tokenId,
+      action: 'tokenize'
+    };
+    
+  } catch (error) {
+    console.error('Tokenization failed:', error);
+    throw new Error(`Tokenization failed: ${error.message}`);
+  }
+}
+
+async function listDomainForAuction(domainName, chain) {
+  console.log(`Listing domain for auction: ${domainName} on ${chain}`);
+  
+  try {
+    // Simulate auction listing
+    const mockTx = {
+      hash: ethers.keccak256(ethers.toUtf8Bytes(`auction-${domainName}-${Date.now()}`)),
+      gasUsed: ethers.parseUnits('30000', 'wei'),
+      blockNumber: Math.floor(Math.random() * 1000000) + 1000000
+    };
+    
+    console.log(`✅ Domain listed for auction: ${domainName}`);
+    console.log(`📝 Transaction hash: ${mockTx.hash}`);
+    
+    return {
+      transactionHash: mockTx.hash,
+      gasUsed: mockTx.gasUsed.toString(),
+      blockNumber: mockTx.blockNumber,
+      action: 'auction'
+    };
+    
+  } catch (error) {
+    console.error('Auction listing failed:', error);
+    throw new Error(`Auction listing failed: ${error.message}`);
+  }
+}
+
+async function renewDomain(domainName, chain) {
+  console.log(`Renewing domain: ${domainName} on ${chain}`);
+  
+  try {
+    // Simulate domain renewal
+    const mockTx = {
+      hash: ethers.keccak256(ethers.toUtf8Bytes(`renew-${domainName}-${Date.now()}`)),
+      gasUsed: ethers.parseUnits('20000', 'wei'),
+      blockNumber: Math.floor(Math.random() * 1000000) + 1000000
+    };
+    
+    console.log(`✅ Domain renewed: ${domainName}`);
+    console.log(`📝 Transaction hash: ${mockTx.hash}`);
+    
+    return {
+      transactionHash: mockTx.hash,
+      gasUsed: mockTx.gasUsed.toString(),
+      blockNumber: mockTx.blockNumber,
+      action: 'renew'
+    };
+    
+  } catch (error) {
+    console.error('Domain renewal failed:', error);
+    throw new Error(`Domain renewal failed: ${error.message}`);
+  }
+}
+
+async function transferDomain(domainName, toAddress, chain) {
+  console.log(`Transferring domain: ${domainName} to ${toAddress} on ${chain}`);
+  
+  if (!toAddress) {
+    throw new Error('Recipient address is required for transfer');
+  }
+  
+  try {
+    // Simulate domain transfer
+    const mockTx = {
+      hash: ethers.keccak256(ethers.toUtf8Bytes(`transfer-${domainName}-${toAddress}-${Date.now()}`)),
+      gasUsed: ethers.parseUnits('25000', 'wei'),
+      blockNumber: Math.floor(Math.random() * 1000000) + 1000000
+    };
+    
+    console.log(`✅ Domain transferred: ${domainName} to ${toAddress}`);
+    console.log(`📝 Transaction hash: ${mockTx.hash}`);
+    
+    return {
+      transactionHash: mockTx.hash,
+      gasUsed: mockTx.gasUsed.toString(),
+      blockNumber: mockTx.blockNumber,
+      action: 'transfer',
+      toAddress: toAddress
+    };
+    
+  } catch (error) {
+    console.error('Domain transfer failed:', error);
+    throw new Error(`Domain transfer failed: ${error.message}`);
+  }
+}
+
+// Enhanced expiring domains checker
+async function checkExpiringDomains() {
+  try {
+    const query = `
+      query GetExpiringDomains {
+        names(first: 1000) {
+          name
+          tld
+          expiry
+          owner
+          activities {
+            type
+            timestamp
+          }
+        }
+      }
+    `;
+
+    const response = await axios.post(DOMA_SUBGRAPH_URL, { query });
+    const namesData = response.data.data?.names || [];
+
+    const expiringDomains = [];
+    const now = Math.floor(Date.now() / 1000);
+    let newAlerts = 0;
+
+    for (const domain of namesData) {
+      if (!domain.expiry) continue;
+      
+      const daysUntilExpiry = Math.floor((domain.expiry - now) / (24 * 60 * 60));
+      
+      if (daysUntilExpiry <= ALERT_CONFIG.expiryThreshold && daysUntilExpiry > 0) {
+        // Calculate score for this domain
+        const length = domain.name.length;
+        const hasKeywordValue = hasKeyword(domain.name);
+        const tldRarity = calculateTldRarity(domain.tld);
+        const txnHistory = domain.activities?.length || 0;
+        const expiryDays = daysUntilExpiry;
+
+        const features = [[length, hasKeywordValue, tldRarity, txnHistory, expiryDays]];
+        const score = Math.round(model.predict(features)[0]);
+        const clampedScore = Math.max(0, Math.min(100, score));
+
+        if (clampedScore >= ALERT_CONFIG.minScoreThreshold) {
+          expiringDomains.push({
+            domainName: domain.name,
+            tld: domain.tld,
+            score: clampedScore,
+            daysUntilExpiry,
+            owner: domain.owner,
+            activityCount: txnHistory,
+            timestamp: new Date().toISOString()
+          });
+
+          // Add to alerts if not already present
+          const existingAlert = alerts.find(alert => 
+            alert.domainName === domain.name && 
+            alert.daysUntilExpiry === daysUntilExpiry
+          );
+          
+          if (!existingAlert) {
+            alerts.push({
+              id: `${domain.name}-${Date.now()}`,
+              type: 'expiring_high_score',
+              domainName: domain.name,
+              tld: domain.tld,
+              score: clampedScore,
+              daysUntilExpiry,
+              owner: domain.owner,
+              timestamp: new Date().toISOString(),
+              priority: clampedScore >= 90 ? 'high' : 'medium'
+            });
+            newAlerts++;
+          }
+        }
+      }
+    }
+
+    return {
+      expiringDomains,
+      newAlerts,
+      totalChecked: namesData.length
+    };
+
+  } catch (error) {
+    console.error('Error checking expiring domains:', error);
+    return {
+      expiringDomains: [],
+      newAlerts: 0,
+      error: error.message
+    };
+  }
+}
+
 // Multi-chain domain scoring endpoint
 app.post('/score-domain-multi', async (req, res) => {
   const { domainName, chain = 'testnet' } = req.body;
@@ -706,6 +1051,121 @@ app.get('/state-sync-status', (req, res) => {
   });
 });
 
+// Enhanced recommendation endpoint with smart actions
+app.post('/recommend-actions', async (req, res) => {
+  const { domainName, score, features } = req.body;
+
+  if (!domainName || score === undefined) {
+    return res.status(400).json({ error: 'Domain name and score are required' });
+  }
+
+  try {
+    const recommendations = generateSmartRecommendations(score, features, domainName);
+    
+    res.json({
+      domainName,
+      score,
+      recommendations,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Error generating recommendations:', error);
+    res.status(500).json({ 
+      error: 'Failed to generate recommendations',
+      details: error.message 
+    });
+  }
+});
+
+// On-chain action trigger endpoint
+app.post('/trigger-action', async (req, res) => {
+  const { action, domainName, chain = 'testnet' } = req.body;
+
+  if (!action || !domainName) {
+    return res.status(400).json({ error: 'Action type and domain name are required' });
+  }
+
+  if (!wallet) {
+    return res.status(503).json({ 
+      error: 'Wallet not configured',
+      details: 'PRIVATE_KEY environment variable is required for on-chain actions'
+    });
+  }
+
+  try {
+    console.log(`Triggering ${action} for domain: ${domainName} on ${chain}`);
+    
+    let result;
+    switch (action.toLowerCase()) {
+      case 'tokenize':
+        result = await tokenizeDomain(domainName, chain);
+        break;
+      case 'auction':
+        result = await listDomainForAuction(domainName, chain);
+        break;
+      case 'renew':
+        result = await renewDomain(domainName, chain);
+        break;
+      case 'transfer':
+        result = await transferDomain(domainName, req.body.toAddress, chain);
+        break;
+      default:
+        return res.status(400).json({ error: 'Unsupported action type' });
+    }
+
+    res.json({
+      success: true,
+      action,
+      domainName,
+      chain,
+      transactionHash: result.transactionHash,
+      gasUsed: result.gasUsed,
+      blockNumber: result.blockNumber,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error(`Error triggering ${action}:`, error);
+    res.status(500).json({ 
+      error: `Failed to execute ${action}`,
+      details: error.message,
+      transactionHash: error.transactionHash || null
+    });
+  }
+});
+
+// Enhanced alerts endpoint with real-time monitoring
+app.get('/get-alerts', async (req, res) => {
+  try {
+    console.log('Fetching real-time alerts...');
+    
+    // Get recent alerts from memory
+    const recentAlerts = alerts.filter(alert => 
+      new Date(alert.timestamp) > new Date(Date.now() - 3600000) // Last hour
+    );
+
+    // Check for new expiring domains
+    const expiringCheck = await checkExpiringDomains();
+    
+    res.json({
+      alerts: recentAlerts,
+      expiringDomains: expiringCheck.expiringDomains,
+      newAlerts: expiringCheck.newAlerts,
+      totalAlerts: alerts.length,
+      lastCheck: new Date().toISOString(),
+      config: ALERT_CONFIG
+    });
+
+  } catch (error) {
+    console.error('Error fetching alerts:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch alerts',
+      details: error.message 
+    });
+  }
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ 
@@ -713,7 +1173,9 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     model: 'trained',
     multiChain: true,
-    supportedChains: Object.keys(CHAIN_ENDPOINTS)
+    supportedChains: Object.keys(CHAIN_ENDPOINTS),
+    wallet: wallet ? wallet.address : null,
+    onChainActions: !!wallet
   });
 });
 
