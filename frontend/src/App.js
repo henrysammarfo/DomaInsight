@@ -1,13 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { ApolloClient, InMemoryCache, ApolloProvider, gql, useQuery } from '@apollo/client';
-import { ethers } from 'ethers';
+import React, { useState, useEffect, useCallback } from 'react';
+import { ApolloClient, InMemoryCache, ApolloProvider } from '@apollo/client';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  BarChart, Bar, PieChart, Pie, Cell, AreaChart, Area
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area
 } from 'recharts';
 import WalletConnect from './components/WalletConnect';
 import LoadingSpinner from './components/LoadingSpinner';
 import ErrorBoundary from './components/ErrorBoundary';
+import ErrorMessage from './components/ErrorMessage';
 import DomainFilters from './components/DomainFilters';
 import Filters from './components/Filters';
 import './App.css';
@@ -18,35 +18,20 @@ const client = new ApolloClient({
   cache: new InMemoryCache(),
 });
 
-// GraphQL queries
-const GET_DOMAIN_DATA = gql`
-  query GetDomain($name: String!) {
-    name(name: $name) {
-      name
-      tld
-      expiry
-      owner
-      activities {
-        type
-        timestamp
-      }
-    }
-  }
-`;
-
-const GET_TRENDS = gql`
-  query GetTrends {
-    names(first: 1000) {
-      name
-      tld
-      expiry
-      activities {
-        type
-        timestamp
-      }
-    }
-  }
-`;
+// GraphQL query for domain data (for future use)
+// const GET_DOMAINS = gql`
+//   query GetDomains {
+//     domains(first: 100) {
+//       id
+//       name
+//       tld
+//       expiryDate
+//       owner
+//       createdAt
+//       transactionCount
+//     }
+//   }
+// `;
 
 // Backend API base URL - use environment variable for production
 const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:3000';
@@ -57,17 +42,19 @@ function DomainScorer({ onScoreUpdate, filters = {} }) {
   const [score, setScore] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [recommendations, setRecommendations] = useState([]);
-  const [filteredDomains, setFilteredDomains] = useState([]);
+  const [errorType, setErrorType] = useState('general');
 
-  const scoreDomain = async () => {
+  const scoreDomain = async (isRetry = false) => {
     if (!domainName.trim()) {
       setError('Please enter a domain name');
+      setErrorType('domain');
       return;
     }
     
     setLoading(true);
     setError(null);
+    setErrorType('general');
+    
     
     try {
       const response = await fetch(`${API_BASE}/score-domain`, {
@@ -79,6 +66,11 @@ function DomainScorer({ onScoreUpdate, filters = {} }) {
       });
       
       if (!response.ok) {
+        if (response.status === 404) {
+          setError('Domain not found in Doma registry');
+          setErrorType('domain');
+          return;
+        }
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
       
@@ -86,11 +78,11 @@ function DomainScorer({ onScoreUpdate, filters = {} }) {
       
       if (data.error) {
         setError(data.error);
+        setErrorType('domain');
         return;
       }
       
       setScore(data);
-      setRecommendations(data.recommendations || []);
       onScoreUpdate(data);
       
       // Log potential transactions for impact demo
@@ -101,12 +93,24 @@ function DomainScorer({ onScoreUpdate, filters = {} }) {
       
     } catch (err) {
       console.error('Domain scoring error:', err);
-      setError(err.message.includes('Failed to fetch') 
-        ? 'Unable to connect to backend. Please ensure the server is running.' 
-        : err.message);
+      
+      if (err.message.includes('Failed to fetch') || err.name === 'TypeError') {
+        setError('Unable to connect to backend. Please check your connection.');
+        setErrorType('network');
+      } else if (err.message.includes('subgraph') || err.message.includes('GraphQL')) {
+        setError('Unable to load data from Doma subgraph');
+        setErrorType('subgraph');
+      } else {
+        setError(err.message);
+        setErrorType('general');
+      }
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRetry = () => {
+    scoreDomain(true);
   };
 
   const getScoreColor = (score) => {
@@ -116,64 +120,6 @@ function DomainScorer({ onScoreUpdate, filters = {} }) {
     return 'text-red-600 bg-red-100 border-red-200';
   };
 
-  // Apply filters to domains
-  const applyFilters = (domains, filters) => {
-    if (!domains || domains.length === 0) return domains;
-    
-    return domains.filter(domain => {
-      // TLD filter
-      if (filters.tld && filters.tld !== 'all') {
-        const domainTld = domain.name?.split('.').pop();
-        if (domainTld !== filters.tld) return false;
-      }
-      
-      // Score range filter
-      if (filters.scoreRange && filters.scoreRange !== 'all') {
-        const domainScore = domain.score || 0;
-        switch (filters.scoreRange) {
-          case 'high':
-            if (domainScore < 80) return false;
-            break;
-          case 'medium':
-            if (domainScore < 60 || domainScore >= 80) return false;
-            break;
-          case 'low':
-            if (domainScore >= 60) return false;
-            break;
-        }
-      }
-      
-      // Status filter
-      if (filters.status && filters.status !== 'all') {
-        const domainStatus = getDomainStatus(domain.expiryDate);
-        if (domainStatus !== filters.status) return false;
-      }
-      
-      return true;
-    });
-  };
-
-  // Get domain status based on expiry date
-  const getDomainStatus = (expiryDate) => {
-    if (!expiryDate) return 'unknown';
-    
-    const now = new Date();
-    const expiry = new Date(expiryDate * 1000);
-    const daysUntilExpiry = Math.ceil((expiry - now) / (1000 * 60 * 60 * 24));
-    
-    if (daysUntilExpiry < 0) return 'expired';
-    if (daysUntilExpiry <= 7) return 'expiring';
-    return 'active';
-  };
-
-  // Update filtered domains when filters change
-  useEffect(() => {
-    if (score && score.domains) {
-      const filtered = applyFilters(score.domains, filters);
-      setFilteredDomains(filtered);
-    }
-  }, [filters, score]);
-
   const getScoreLabel = (score) => {
     if (score >= 80) return 'Premium';
     if (score >= 60) return 'Good';
@@ -182,7 +128,12 @@ function DomainScorer({ onScoreUpdate, filters = {} }) {
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
+    <motion.div 
+      className="bg-white rounded-xl shadow-lg p-6 mb-8"
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+    >
       <h2 className="text-2xl font-bold text-gray-800 mb-6">Domain Scoring</h2>
       
       <div className="flex flex-col sm:flex-row gap-4 mb-6">
@@ -191,68 +142,111 @@ function DomainScorer({ onScoreUpdate, filters = {} }) {
           value={domainName}
           onChange={(e) => setDomainName(e.target.value)}
           placeholder="Enter domain name (e.g., crypto.eth)"
-          className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
-          onKeyPress={(e) => e.key === 'Enter' && scoreDomain()}
+          className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg transition-all duration-200"
+          onKeyPress={(e) => e.key === 'Enter' && !loading && scoreDomain()}
         />
-        <button
-          onClick={scoreDomain}
+        <motion.button
+          onClick={() => scoreDomain()}
           disabled={loading}
-          className="px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-semibold text-lg transition-colors"
+          className="px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-semibold text-lg transition-colors duration-200"
+          whileHover={{ scale: loading ? 1 : 1.05 }}
+          whileTap={{ scale: loading ? 1 : 0.95 }}
         >
-          {loading ? 'Scoring...' : 'Score Domain'}
-        </button>
+          {loading ? (
+            <div className="flex items-center">
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+              Scoring...
+            </div>
+          ) : (
+            'Score Domain'
+          )}
+        </motion.button>
       </div>
 
-      {error && (
-        <div className="mb-6 p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg animate-fade-in">
-          <div className="flex items-center">
-            <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-            </svg>
-            {error}
-          </div>
-        </div>
-      )}
+      <AnimatePresence>
+        {error && (
+          <ErrorMessage 
+            error={error} 
+            type={errorType}
+            onRetry={handleRetry}
+          />
+        )}
+      </AnimatePresence>
 
-      {score && (
-        <div className="space-y-6">
-          {/* Score Display */}
-          <div className="text-center">
-            <div className={`inline-flex items-center justify-center w-32 h-32 rounded-full text-4xl font-bold border-4 ${getScoreColor(score.score)}`}>
-              {score.score}
-            </div>
-            <p className="mt-4 text-xl font-semibold text-gray-700">
-              {getScoreLabel(score.score)} Quality
-            </p>
-            <p className="text-lg text-gray-500">{score.domainName}</p>
-          </div>
+      <AnimatePresence>
+        {score && (
+          <motion.div 
+            className="space-y-6"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.5, delay: 0.2 }}
+          >
+            {/* Score Display */}
+            <motion.div 
+              className="text-center"
+              initial={{ scale: 0.8 }}
+              animate={{ scale: 1 }}
+              transition={{ duration: 0.5, delay: 0.3 }}
+            >
+              <motion.div 
+                className={`inline-flex items-center justify-center w-32 h-32 rounded-full text-4xl font-bold border-4 ${getScoreColor(score.score)}`}
+                initial={{ rotate: -180 }}
+                animate={{ rotate: 0 }}
+                transition={{ duration: 0.8, delay: 0.4 }}
+              >
+                {score.score}
+              </motion.div>
+              <motion.p 
+                className="mt-4 text-xl font-semibold text-gray-700"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.6 }}
+              >
+                {getScoreLabel(score.score)} Quality
+              </motion.p>
+              <motion.p 
+                className="text-lg text-gray-500"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.7 }}
+              >
+                {score.domainName}
+              </motion.p>
+            </motion.div>
 
-          {/* Features Breakdown */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="text-center p-4 bg-gray-50 rounded-lg border">
-              <div className="text-3xl font-bold text-gray-800">{score.features.length}</div>
-              <div className="text-sm text-gray-600 font-medium">Length</div>
-            </div>
-            <div className="text-center p-4 bg-gray-50 rounded-lg border">
-              <div className="text-3xl font-bold text-gray-800">
-                {score.features.hasKeyword ? '✓' : '✗'}
+            {/* Features Breakdown */}
+            <motion.div 
+              className="grid grid-cols-2 md:grid-cols-4 gap-4"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.8 }}
+            >
+              <div className="text-center p-4 bg-gray-50 rounded-lg border">
+                <div className="text-3xl font-bold text-gray-800">{score.features.length}</div>
+                <div className="text-sm text-gray-600 font-medium">Length</div>
               </div>
-              <div className="text-sm text-gray-600 font-medium">Keyword</div>
-            </div>
-            <div className="text-center p-4 bg-gray-50 rounded-lg border">
-              <div className="text-3xl font-bold text-gray-800">
-                {Math.round(score.features.tldRarity * 100)}%
+              <div className="text-center p-4 bg-gray-50 rounded-lg border">
+                <div className="text-3xl font-bold text-gray-800">
+                  {score.features.hasKeyword ? '✓' : '✗'}
+                </div>
+                <div className="text-sm text-gray-600 font-medium">Keyword</div>
               </div>
-              <div className="text-sm text-gray-600 font-medium">TLD Rarity</div>
-            </div>
-            <div className="text-center p-4 bg-gray-50 rounded-lg border">
-              <div className="text-3xl font-bold text-gray-800">{score.features.txnHistory}</div>
-              <div className="text-sm text-gray-600 font-medium">Activities</div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+              <div className="text-center p-4 bg-gray-50 rounded-lg border">
+                <div className="text-3xl font-bold text-gray-800">
+                  {Math.round(score.features.tldRarity * 100)}%
+                </div>
+                <div className="text-sm text-gray-600 font-medium">TLD Rarity</div>
+              </div>
+              <div className="text-center p-4 bg-gray-50 rounded-lg border">
+                <div className="text-3xl font-bold text-gray-800">{score.features.txnHistory}</div>
+                <div className="text-sm text-gray-600 font-medium">Activities</div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
 }
 
@@ -261,13 +255,7 @@ function Recommendations({ score, onActionTrigger, walletAddress }) {
   const [recommendations, setRecommendations] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    if (score) {
-      fetchRecommendations();
-    }
-  }, [score]);
-
-  const fetchRecommendations = async () => {
+  const fetchRecommendations = useCallback(async () => {
     setLoading(true);
     try {
       const response = await fetch(`${API_BASE}/recommend-actions`, {
@@ -283,22 +271,22 @@ function Recommendations({ score, onActionTrigger, walletAddress }) {
       });
       
       const data = await response.json();
-      if (response.ok) {
-        setRecommendations(data.recommendations || []);
-      }
+      setRecommendations(data.recommendations || []);
     } catch (error) {
       console.error('Failed to fetch recommendations:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [score]);
 
-  const handleAction = async (action, domainName) => {
-    if (!walletAddress) {
-      alert('Please connect your wallet to perform on-chain actions');
-      return;
+  useEffect(() => {
+    if (score) {
+      fetchRecommendations();
     }
+  }, [score, fetchRecommendations]);
 
+
+  const triggerAction = async (action) => {
     try {
       const response = await fetch(`${API_BASE}/trigger-action`, {
         method: 'POST',
@@ -306,71 +294,66 @@ function Recommendations({ score, onActionTrigger, walletAddress }) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          action,
-          domainName,
+          action: action.action,
+          domainName: score.domainName,
           chain: 'testnet'
         }),
       });
       
       const data = await response.json();
-      if (response.ok) {
-        onActionTrigger(data);
-        console.log(`Action triggered: ${action} for ${domainName}`);
-        console.log(`Transaction hash: ${data.transactionHash}`);
-        
-        // Log potential transaction for impact demo
-        console.log(`Potential txns: 1 (${action} action executed)`);
-      } else {
-        alert(`Action failed: ${data.error}`);
-      }
+      onActionTrigger(data);
     } catch (error) {
-      console.error('Action failed:', error);
-      alert('Action failed: ' + error.message);
+      console.error('Failed to trigger action:', error);
     }
   };
 
   if (!score) return null;
 
   return (
-    <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
-      <h3 className="text-xl font-bold text-gray-800 mb-4">Smart Recommendations</h3>
+    <motion.div 
+      className="bg-white rounded-xl shadow-lg p-6"
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+    >
+      <h2 className="text-2xl font-bold text-gray-800 mb-6">AI Recommendations</h2>
       
       {loading ? (
-        <div className="text-center py-8">Loading recommendations...</div>
+        <LoadingSpinner text="Generating recommendations..." color="green" />
       ) : (
         <div className="space-y-4">
           {recommendations.map((rec, index) => (
-            <div key={index} className={`p-4 rounded-lg border-l-4 ${
-              rec.priority === 'high' ? 'border-red-500 bg-red-50' :
-              rec.priority === 'medium' ? 'border-yellow-500 bg-yellow-50' :
-              'border-blue-500 bg-blue-50'
-            }`}>
+            <motion.div
+              key={index}
+              className="p-4 border border-gray-200 rounded-lg hover:shadow-md transition-shadow"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: index * 0.1 }}
+            >
               <div className="flex justify-between items-start">
-                <div className="flex-1">
-                  <h4 className="font-semibold text-gray-800">{rec.title}</h4>
-                  <p className="text-sm text-gray-600 mt-1">{rec.description}</p>
-                  <div className="flex gap-4 mt-2 text-xs text-gray-500">
-                    <span>Est. Value: {rec.estimatedValue} ETH</span>
-                    <span>Gas: {rec.gasEstimate}</span>
-                    <span>ROI: {rec.roi}</span>
+                <div>
+                  <h3 className="font-semibold text-gray-800">{rec.title}</h3>
+                  <p className="text-gray-600 text-sm mt-1">{rec.description}</p>
+                  <div className="flex items-center mt-2 space-x-4 text-xs text-gray-500">
+                    <span>Priority: {rec.priority}</span>
+                    <span>ROI: {rec.estimatedROI}%</span>
+                    <span>Gas: {rec.estimatedGas} ETH</span>
                   </div>
                 </div>
-                <button
-                  onClick={() => handleAction(rec.action, score.domainName)}
-                  className="ml-4 px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
+                <motion.button
+                  onClick={() => triggerAction(rec)}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
                 >
-                  {rec.action === 'tokenize' ? 'Tokenize' :
-                   rec.action === 'auction' ? 'List Auction' :
-                   rec.action === 'renew' ? 'Renew' :
-                   rec.action === 'transfer' ? 'Transfer' :
-                   'View Details'}
-                </button>
+                  {rec.action}
+                </motion.button>
               </div>
-            </div>
+            </motion.div>
           ))}
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }
 
@@ -378,110 +361,64 @@ function Recommendations({ score, onActionTrigger, walletAddress }) {
 function TrendAnalytics() {
   const [trends, setTrends] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-
-  const fetchTrends = async () => {
-    setLoading(true);
-    setError(null);
-    
-    try {
-      const response = await fetch(`${API_BASE}/get-trends`);
-      const data = await response.json();
-      
-      if (response.ok) {
-        setTrends(data);
-      } else {
-        setError(data.error || 'Failed to fetch trends');
-      }
-    } catch (err) {
-      setError('Network error: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   useEffect(() => {
     fetchTrends();
   }, []);
 
-  if (loading) return <div className="text-center py-8">Loading trends...</div>;
-  if (error) return <div className="text-center py-8 text-red-600">{error}</div>;
-  if (!trends) return null;
-
-  // Prepare chart data
-  const tldData = trends.tldStats?.slice(0, 10).map(tld => ({
-    name: tld.tld,
-    domains: tld.count,
-    avgScore: Math.round(tld.avgScore)
-  })) || [];
-
-  const scoreDistribution = [
-    { name: 'High (70+)', value: trends.scoreDistribution?.high || 0, color: '#10b981' },
-    { name: 'Medium (40-69)', value: trends.scoreDistribution?.medium || 0, color: '#f59e0b' },
-    { name: 'Low (<40)', value: trends.scoreDistribution?.low || 0, color: '#ef4444' }
-  ];
+  const fetchTrends = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/get-trends`);
+      const data = await response.json();
+      setTrends(data);
+    } catch (error) {
+      console.error('Failed to fetch trends:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
+    <motion.div 
+      className="bg-white rounded-xl shadow-lg p-6"
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+    >
       <h2 className="text-2xl font-bold text-gray-800 mb-6">Market Trends</h2>
       
-      {/* Key Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="text-center p-6 bg-blue-50 rounded-lg border">
-          <div className="text-4xl font-bold text-blue-600">{trends.totalDomains}</div>
-          <div className="text-sm text-gray-600 font-medium">Total Domains</div>
+      {loading ? (
+        <LoadingSpinner text="Loading trends..." color="purple" />
+      ) : trends ? (
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="text-center p-4 bg-blue-50 rounded-lg">
+              <div className="text-2xl font-bold text-blue-600">{trends.totalDomains}</div>
+              <div className="text-sm text-blue-800">Total Domains</div>
+            </div>
+            <div className="text-center p-4 bg-green-50 rounded-lg">
+              <div className="text-2xl font-bold text-green-600">{trends.insights.avgScore}</div>
+              <div className="text-sm text-green-800">Avg Score</div>
+            </div>
+          </div>
+          
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={trends.chartData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="date" />
+                <YAxis />
+                <Tooltip />
+                <Area type="monotone" dataKey="score" stroke="#8884d8" fill="#8884d8" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
         </div>
-        <div className="text-center p-6 bg-green-50 rounded-lg border">
-          <div className="text-4xl font-bold text-green-600">{trends.insights.totalActivity}</div>
-          <div className="text-sm text-gray-600 font-medium">Total Activities</div>
-        </div>
-        <div className="text-center p-6 bg-purple-50 rounded-lg border">
-          <div className="text-4xl font-bold text-purple-600">{trends.insights.avgScore}</div>
-          <div className="text-sm text-gray-600 font-medium">Avg Score</div>
-        </div>
-      </div>
-
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* TLD Distribution */}
-        <div>
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">Top TLDs</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={tldData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis />
-              <Tooltip />
-              <Bar dataKey="domains" fill="#3b82f6" />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Score Distribution */}
-        <div>
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">Score Distribution</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-              <Pie
-                data={scoreDistribution}
-                cx="50%"
-                cy="50%"
-                labelLine={false}
-                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                outerRadius={80}
-                fill="#8884d8"
-                dataKey="value"
-              >
-                {scoreDistribution.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
-                ))}
-              </Pie>
-              <Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-    </div>
+      ) : (
+        <div className="text-center py-8 text-gray-500">No trend data available</div>
+      )}
+    </motion.div>
   );
 }
 
@@ -490,15 +427,18 @@ function Alerts() {
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [errorType, setErrorType] = useState('general');
   const [filters, setFilters] = useState({
     priority: 'all',
     tld: 'all',
     status: 'all'
   });
 
-  const fetchAlerts = async () => {
+  const fetchAlerts = async (isRetry = false) => {
     setLoading(true);
     setError(null);
+    setErrorType('general');
+    
     try {
       const response = await fetch(`${API_BASE}/get-alerts`);
       
@@ -510,18 +450,31 @@ function Alerts() {
       
       if (data.error) {
         setError(data.error);
+        setErrorType('subgraph');
         return;
       }
       
       setAlerts(data.alerts || []);
     } catch (error) {
       console.error('Failed to fetch alerts:', error);
-      setError(error.message.includes('Failed to fetch') 
-        ? 'Unable to connect to backend for alerts' 
-        : error.message);
+      
+      if (error.message.includes('Failed to fetch') || error.name === 'TypeError') {
+        setError('Unable to connect to backend for alerts');
+        setErrorType('network');
+      } else if (error.message.includes('subgraph') || error.message.includes('GraphQL')) {
+        setError('Unable to load alerts from Doma subgraph');
+        setErrorType('subgraph');
+      } else {
+        setError(error.message);
+        setErrorType('general');
+      }
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRetry = () => {
+    fetchAlerts(true);
   };
 
   useEffect(() => {
@@ -549,72 +502,102 @@ function Alerts() {
   });
 
   return (
-    <div className="bg-white rounded-xl shadow-lg p-6">
+    <motion.div 
+      className="bg-white rounded-xl shadow-lg p-6"
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+    >
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold text-gray-800">Domain Alerts</h2>
-        <button
-          onClick={fetchAlerts}
-          className="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors"
+        <motion.button
+          onClick={() => fetchAlerts()}
+          className="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors duration-200"
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
         >
           Refresh
-        </button>
+        </motion.button>
       </div>
 
       <DomainFilters filters={filters} onFilterChange={handleFilterChange} />
 
-      {error && (
-        <div className="mb-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg">
-          <div className="flex items-center">
-            <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-            </svg>
-            {error}
-          </div>
-        </div>
-      )}
+      <AnimatePresence>
+        {error && (
+          <ErrorMessage 
+            error={error} 
+            type={errorType}
+            onRetry={handleRetry}
+          />
+        )}
+      </AnimatePresence>
 
       {loading ? (
-        <LoadingSpinner text="Loading alerts..." />
+        <LoadingSpinner text="Loading alerts..." color="purple" />
       ) : (
         <div className="space-y-4">
           {filteredAlerts.length === 0 ? (
             <div className="text-center py-8 text-gray-500">No alerts found</div>
           ) : (
             filteredAlerts.map((alert, index) => (
-              <div key={index} className={`p-4 rounded-lg border-l-4 ${
-                alert.priority === 'high' ? 'border-red-500 bg-red-50' :
-                alert.priority === 'medium' ? 'border-yellow-500 bg-yellow-50' :
-                'border-blue-500 bg-blue-50'
-              }`}>
-                <div className="flex justify-between items-start">
+              <motion.div
+                key={index}
+                className="p-4 border border-gray-200 rounded-lg"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.1 }}
+              >
+                <div className="flex justify-between items-center">
                   <div>
-                    <h4 className="font-semibold text-gray-800">{alert.domainName}</h4>
+                    <h3 className="font-semibold text-gray-800">{alert.domainName}</h3>
                     <p className="text-sm text-gray-600">
-                      {alert.type === 'expiring_high_score' ? 
-                        `Expires in ${alert.daysUntilExpiry} days` : 
-                        alert.type
-                      }
-                    </p>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Score: {alert.score} | TLD: .{alert.tld} | {new Date(alert.timestamp).toLocaleString()}
+                      {alert.daysUntilExpiry} days until expiry
                     </p>
                   </div>
-                  <div className="text-right">
-                    <div className={`px-2 py-1 rounded text-xs font-medium ${
-                      alert.priority === 'high' ? 'bg-red-100 text-red-800' :
-                      alert.priority === 'medium' ? 'bg-yellow-100 text-yellow-800' :
-                      'bg-blue-100 text-blue-800'
-                    }`}>
-                      {alert.priority}
-                    </div>
-                  </div>
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                    alert.priority === 'high' ? 'bg-red-100 text-red-800' :
+                    alert.priority === 'medium' ? 'bg-yellow-100 text-yellow-800' :
+                    'bg-green-100 text-green-800'
+                  }`}>
+                    {alert.priority}
+                  </span>
                 </div>
-              </div>
+              </motion.div>
             ))
           )}
         </div>
       )}
-    </div>
+    </motion.div>
+  );
+}
+
+// Action History Component
+function ActionHistory({ history }) {
+  if (history.length === 0) return null;
+
+  return (
+    <motion.div 
+      className="bg-white rounded-xl shadow-lg p-6"
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+    >
+      <h3 className="text-xl font-bold text-gray-800 mb-4">Recent Actions</h3>
+      <div className="space-y-2">
+        {history.map((action, index) => (
+          <motion.div
+            key={index}
+            className="flex justify-between items-center p-2 bg-gray-50 rounded"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: index * 0.1 }}
+          >
+            <span className="text-sm text-gray-700">{action.action}</span>
+            <span className="text-xs text-gray-500">{action.transactionHash?.slice(0, 8)}...</span>
+          </motion.div>
+        ))}
+      </div>
+    </motion.div>
   );
 }
 
@@ -655,97 +638,109 @@ function App() {
   return (
     <ErrorBoundary>
       <ApolloProvider client={client}>
-        <div className="min-h-screen bg-gray-100">
-        {/* Header */}
-        <header className="bg-white shadow-sm border-b">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between items-center py-6">
-              <div>
-                <h1 className="text-3xl font-bold text-gray-900">DomaInsight</h1>
-                <p className="text-gray-600">AI-Driven Domain Scoring & Predictive Analytics</p>
-              </div>
-              <div className="flex items-center space-x-4">
-                <div className="text-sm text-gray-500">
-                  Doma Protocol Hackathon • Track 4
+        <motion.div 
+          className="min-h-screen bg-gray-100"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.5 }}
+        >
+          {/* Header */}
+          <header className="bg-white shadow-sm border-b">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <div className="flex justify-between items-center py-6">
+                <div>
+                  <h1 className="text-3xl font-bold text-gray-900">DomaInsight</h1>
+                  <p className="text-gray-600">AI-Driven Domain Scoring & Predictive Analytics</p>
                 </div>
-                <WalletConnect 
-                  onWalletConnect={handleWalletConnect}
-                  onWalletDisconnect={handleWalletDisconnect}
-                />
-              </div>
-            </div>
-          </div>
-        </header>
-
-        {/* Main Content */}
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          {/* Enhanced Filters Section */}
-          <div className="mb-8">
-            <Filters 
-              onFiltersChange={handleFiltersChange}
-              currentFilters={filters}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* Left Column - Domain Scoring & Recommendations */}
-            <div className="lg:col-span-2 space-y-8">
-              <DomainScorer 
-                onScoreUpdate={handleScoreUpdate}
-                filters={filters}
-              />
-              <Recommendations 
-                score={currentScore} 
-                onActionTrigger={handleActionTrigger}
-                walletAddress={walletAddress}
-              />
-            </div>
-
-            {/* Right Column - Trends & Alerts */}
-            <div className="space-y-8">
-              <TrendAnalytics />
-              <Alerts />
-            </div>
-          </div>
-
-          {/* Action History */}
-          {actionHistory.length > 0 && (
-            <div className="mt-8 bg-white rounded-xl shadow-lg p-6">
-              <h3 className="text-xl font-bold text-gray-800 mb-4">Recent Actions</h3>
-              <div className="space-y-2">
-                {actionHistory.map((action, index) => (
-                  <div key={index} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                    <div>
-                      <span className="font-medium">{action.action}</span> - {action.domainName}
-                    </div>
-                    <div className="text-sm text-gray-500">
-                      {action.transactionHash ? `Tx: ${action.transactionHash.slice(0, 10)}...` : 'Pending'}
-                    </div>
+                <div className="flex items-center space-x-4">
+                  <div className="text-sm text-gray-500">
+                    Doma Protocol Hackathon • Track 4
                   </div>
-                ))}
+                  <WalletConnect 
+                    onWalletConnect={handleWalletConnect}
+                    onWalletDisconnect={handleWalletDisconnect}
+                  />
+                </div>
               </div>
             </div>
-          )}
-        </main>
+          </header>
 
-        {/* Footer */}
-        <footer className="bg-white border-t mt-12">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            <div className="text-center text-gray-500 text-sm">
-              <p>Built for Doma Protocol Hackathon • Powered by AI & Real On-Chain Data</p>
-              <p className="mt-2">
-                <a href="https://docs.doma.xyz" className="text-blue-600 hover:text-blue-700">
-                  Doma Documentation
-                </a>
-                {' • '}
-                <a href="https://start.doma.xyz" className="text-blue-600 hover:text-blue-700">
-                  Testnet
-                </a>
-              </p>
+          {/* Main Content */}
+          <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            {/* Enhanced Filters Section */}
+            <motion.div 
+              className="mb-8"
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.1 }}
+            >
+              <Filters 
+                onFiltersChange={handleFiltersChange}
+                currentFilters={filters}
+              />
+            </motion.div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              {/* Left Column - Domain Scoring & Recommendations */}
+              <motion.div 
+                className="lg:col-span-2 space-y-8"
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.5, delay: 0.2 }}
+              >
+                <DomainScorer 
+                  onScoreUpdate={handleScoreUpdate}
+                  filters={filters}
+                />
+                <Recommendations 
+                  score={currentScore} 
+                  onActionTrigger={handleActionTrigger}
+                  walletAddress={walletAddress}
+                />
+              </motion.div>
+
+              {/* Right Column - Trends & Alerts */}
+              <motion.div 
+                className="space-y-8"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.5, delay: 0.3 }}
+              >
+                <TrendAnalytics />
+                <Alerts />
+              </motion.div>
             </div>
-          </div>
-        </footer>
-        </div>
+
+            {/* Action History */}
+            {actionHistory.length > 0 && (
+              <motion.div 
+                className="mt-8"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.4 }}
+              >
+                <ActionHistory history={actionHistory} />
+              </motion.div>
+            )}
+          </main>
+
+          {/* Footer */}
+          <footer className="bg-white border-t mt-16">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+              <div className="text-center">
+                <p className="text-gray-600">
+                  Built for Doma Protocol Hackathon Track 4 • 
+                  <a href="https://docs.doma.xyz" className="text-blue-600 hover:text-blue-800 ml-1">
+                    Doma Documentation
+                  </a> • 
+                  <a href="https://start.doma.xyz" className="text-blue-600 hover:text-blue-800 ml-1">
+                    Testnet
+                  </a>
+                </p>
+              </div>
+            </div>
+          </footer>
+        </motion.div>
       </ApolloProvider>
     </ErrorBoundary>
   );
