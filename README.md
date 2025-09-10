@@ -8,8 +8,14 @@ A full-stack dApp that provides AI-driven domain scoring and predictive analytic
 
 ## 🚀 Live Demo
 
-**Backend API**: `http://localhost:3001`  
-**Frontend**: `http://localhost:3000`
+**Production URLs:**
+- **Frontend**: https://domainsight-frontend.vercel.app
+- **Backend API**: https://domainsight-backend.fly.dev
+- **Health Check**: https://domainsight-backend.fly.dev/health
+
+**Local Development:**
+- **Backend API**: `http://localhost:3000`  
+- **Frontend**: `http://localhost:3001`
 
 ## 📋 Project Overview
 
@@ -258,42 +264,135 @@ query GetDomain($name: String!) {
 
 ## 🧪 Testing
 
-### Backend Testing
+### End-to-End Testing
+
+**Local Testing:**
 ```bash
-cd backend
-# Test domain scoring
-curl -X POST http://localhost:3001/score-domain \
+# Install test dependencies
+npm install puppeteer axios
+
+# Test API endpoints
+node test-api.js
+
+# Test full user flow with browser automation
+node test-e2e.js
+```
+
+**Live Deployment Testing:**
+```bash
+# Test live deployment
+node test-live.js
+
+# Test with custom URLs
+FRONTEND_URL=https://your-frontend.vercel.app BACKEND_URL=https://your-backend.fly.dev node test-live.js
+```
+
+### Manual Testing
+
+**Backend API Testing:**
+```bash
+# Health check
+curl https://domainsight-backend.fly.dev/health
+
+# Domain scoring
+curl -X POST https://domainsight-backend.fly.dev/score-domain \
   -H "Content-Type: application/json" \
   -d '{"domainName": "crypto.eth"}'
 
-# Test trends
-curl http://localhost:3001/get-trends
+# Get trends
+curl https://domainsight-backend.fly.dev/get-trends
 
-# Health check
-curl http://localhost:3001/health
+# Get alerts
+curl https://domainsight-backend.fly.dev/get-alerts
 ```
 
-### Frontend Testing
-1. Open `http://localhost:3000`
+**Frontend Testing:**
+1. Visit https://domainsight-frontend.vercel.app
 2. Enter a domain name (e.g., "crypto.eth")
 3. Click "Score Domain"
 4. View results and recommendations
 5. Check trend analytics dashboard
+6. Test wallet connection
+7. Try on-chain actions
+
+### Test Coverage
+
+- ✅ Domain scoring with real Doma testnet data
+- ✅ Smart recommendations generation
+- ✅ On-chain action execution
+- ✅ Multi-chain data synchronization
+- ✅ Real-time alerts and monitoring
+- ✅ Market trends and analytics
+- ✅ Error handling and graceful failures
+- ✅ Wallet connection and Web3 integration
+- ✅ Mobile responsiveness
+- ✅ CORS configuration
 
 ## 🚀 Deployment
 
-### Backend Deployment
-```bash
-cd backend
-npm run build
-# Deploy to your preferred platform (Heroku, Vercel, etc.)
-```
+### Backend Deployment (Fly.io)
 
-### Frontend Deployment
+1. **Install Fly CLI:**
+   ```bash
+   curl -L https://fly.io/install.sh | sh
+   ```
+
+2. **Deploy Backend:**
+   ```bash
+   chmod +x deploy-backend.sh
+   ./deploy-backend.sh
+   ```
+
+3. **Manual Deployment:**
+   ```bash
+   cd backend
+   flyctl auth login
+   flyctl apps create domainsight-backend --generate-name
+   flyctl secrets set PRIVATE_KEY="your_testnet_private_key"
+   flyctl secrets set NODE_ENV="production"
+   flyctl deploy
+   ```
+
+### Frontend Deployment (Vercel)
+
+1. **Install Vercel CLI:**
+   ```bash
+   npm i -g vercel
+   ```
+
+2. **Deploy Frontend:**
+   ```bash
+   chmod +x deploy-frontend.sh
+   ./deploy-frontend.sh
+   ```
+
+3. **Manual Deployment:**
+   ```bash
+   cd frontend
+   echo "REACT_APP_API_URL=https://your-backend-url.fly.dev" > .env.local
+   npm run build
+   vercel --prod
+   ```
+
+### Environment Variables
+
+**Backend (Fly.io):**
+- `PRIVATE_KEY` - Your testnet wallet private key
+- `NODE_ENV` - Set to "production"
+- `DOMA_SUBGRAPH_URL` - Doma testnet subgraph URL
+- `DOMA_TESTNET_RPC` - Doma testnet RPC URL
+
+**Frontend (Vercel):**
+- `REACT_APP_API_URL` - Your deployed backend URL
+
+### Testing Live Deployment
+
 ```bash
-cd frontend
-npm run build
-# Deploy to Vercel, Netlify, or your preferred platform
+# Test the live deployment
+node test-live.js
+
+# Test with custom URLs
+FRONTEND_URL=https://your-frontend.vercel.app BACKEND_URL=https://your-backend.fly.dev node test-live.js
 ```
 
 ## 🤝 Contributing

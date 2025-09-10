@@ -6,6 +6,9 @@ import {
   BarChart, Bar, PieChart, Pie, Cell, AreaChart, Area
 } from 'recharts';
 import WalletConnect from './components/WalletConnect';
+import LoadingSpinner from './components/LoadingSpinner';
+import ErrorBoundary from './components/ErrorBoundary';
+import DomainFilters from './components/DomainFilters';
 import './App.css';
 
 // Apollo Client setup for Doma subgraph
@@ -44,8 +47,8 @@ const GET_TRENDS = gql`
   }
 `;
 
-// Backend API base URL
-const API_BASE = 'http://localhost:3000';
+// Backend API base URL - use environment variable for production
+const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:3000';
 
 // Domain Scoring Component
 function DomainScorer({ onScoreUpdate }) {
@@ -56,7 +59,10 @@ function DomainScorer({ onScoreUpdate }) {
   const [recommendations, setRecommendations] = useState([]);
 
   const scoreDomain = async () => {
-    if (!domainName.trim()) return;
+    if (!domainName.trim()) {
+      setError('Please enter a domain name');
+      return;
+    }
     
     setLoading(true);
     setError(null);
@@ -70,23 +76,32 @@ function DomainScorer({ onScoreUpdate }) {
         body: JSON.stringify({ domainName: domainName.trim() }),
       });
       
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
       const data = await response.json();
       
-      if (response.ok) {
-        setScore(data);
-        setRecommendations(data.recommendations || []);
-        onScoreUpdate(data);
-        
-        // Log potential transactions for impact demo
-        const potentialTxns = data.recommendations?.filter(rec => 
-          ['tokenize', 'auction', 'renew', 'transfer'].includes(rec.action)
-        ).length || 0;
-        console.log(`Potential txns: ${potentialTxns}`);
-      } else {
-        setError(data.error || 'Failed to score domain');
+      if (data.error) {
+        setError(data.error);
+        return;
       }
+      
+      setScore(data);
+      setRecommendations(data.recommendations || []);
+      onScoreUpdate(data);
+      
+      // Log potential transactions for impact demo
+      const potentialTxns = data.recommendations?.filter(rec => 
+        ['tokenize', 'auction', 'renew', 'transfer'].includes(rec.action)
+      ).length || 0;
+      console.log(`Potential txns: ${potentialTxns}`);
+      
     } catch (err) {
-      setError('Network error: ' + err.message);
+      console.error('Domain scoring error:', err);
+      setError(err.message.includes('Failed to fetch') 
+        ? 'Unable to connect to backend. Please ensure the server is running.' 
+        : err.message);
     } finally {
       setLoading(false);
     }
@@ -129,8 +144,13 @@ function DomainScorer({ onScoreUpdate }) {
       </div>
 
       {error && (
-        <div className="mb-6 p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg">
-          {error}
+        <div className="mb-6 p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg animate-fade-in">
+          <div className="flex items-center">
+            <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+            </svg>
+            {error}
+          </div>
         </div>
       )}
 
@@ -409,19 +429,36 @@ function TrendAnalytics() {
 function Alerts() {
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [filter, setFilter] = useState('all');
+  const [error, setError] = useState(null);
+  const [filters, setFilters] = useState({
+    priority: 'all',
+    tld: 'all',
+    status: 'all'
+  });
 
   const fetchAlerts = async () => {
     setLoading(true);
+    setError(null);
     try {
       const response = await fetch(`${API_BASE}/get-alerts`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
       const data = await response.json();
       
-      if (response.ok) {
-        setAlerts(data.alerts || []);
+      if (data.error) {
+        setError(data.error);
+        return;
       }
+      
+      setAlerts(data.alerts || []);
     } catch (error) {
       console.error('Failed to fetch alerts:', error);
+      setError(error.message.includes('Failed to fetch') 
+        ? 'Unable to connect to backend for alerts' 
+        : error.message);
     } finally {
       setLoading(false);
     }
@@ -433,32 +470,51 @@ function Alerts() {
     return () => clearInterval(interval);
   }, []);
 
+  const handleFilterChange = (filterType, value) => {
+    if (value === 'clear') {
+      setFilters({ priority: 'all', tld: 'all', status: 'all' });
+    } else {
+      setFilters(prev => ({ ...prev, [filterType]: value }));
+    }
+  };
+
   const filteredAlerts = alerts.filter(alert => {
-    if (filter === 'all') return true;
-    if (filter === 'high') return alert.priority === 'high';
-    if (filter === 'medium') return alert.priority === 'medium';
-    if (filter === 'low') return alert.priority === 'low';
-    return alert.tld === filter;
+    if (filters.priority !== 'all' && alert.priority !== filters.priority) return false;
+    if (filters.tld !== 'all' && alert.tld !== filters.tld) return false;
+    if (filters.status !== 'all') {
+      if (filters.status === 'expiring' && alert.daysUntilExpiry > 7) return false;
+      if (filters.status === 'active' && alert.daysUntilExpiry <= 7) return false;
+    }
+    return true;
   });
 
   return (
     <div className="bg-white rounded-xl shadow-lg p-6">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold text-gray-800">Domain Alerts</h2>
-        <select
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+        <button
+          onClick={fetchAlerts}
+          className="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors"
         >
-          <option value="all">All Alerts</option>
-          <option value="high">High Priority</option>
-          <option value="medium">Medium Priority</option>
-          <option value="low">Low Priority</option>
-        </select>
+          Refresh
+        </button>
       </div>
 
+      <DomainFilters filters={filters} onFilterChange={handleFilterChange} />
+
+      {error && (
+        <div className="mb-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg">
+          <div className="flex items-center">
+            <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+            </svg>
+            {error}
+          </div>
+        </div>
+      )}
+
       {loading ? (
-        <div className="text-center py-8">Loading alerts...</div>
+        <LoadingSpinner text="Loading alerts..." />
       ) : (
         <div className="space-y-4">
           {filteredAlerts.length === 0 ? (
@@ -527,8 +583,9 @@ function App() {
   };
 
   return (
-    <ApolloProvider client={client}>
-      <div className="min-h-screen bg-gray-100">
+    <ErrorBoundary>
+      <ApolloProvider client={client}>
+        <div className="min-h-screen bg-gray-100">
         {/* Header */}
         <header className="bg-white shadow-sm border-b">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -607,8 +664,9 @@ function App() {
             </div>
           </div>
         </footer>
-      </div>
-    </ApolloProvider>
+        </div>
+      </ApolloProvider>
+    </ErrorBoundary>
   );
 }
 
