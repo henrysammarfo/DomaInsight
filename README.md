@@ -328,72 +328,156 @@ curl https://domainsight-backend.fly.dev/get-alerts
 - ✅ Mobile responsiveness
 - ✅ CORS configuration
 
-## 🚀 Deployment
+## 🚀 Deployment Instructions
 
-### Backend Deployment (Fly.io)
+### Backend (Fly.io)
 
-1. **Install Fly CLI:**
+**Prerequisites:**
+- Fly.io account ([Sign up here](https://fly.io))
+- Doma testnet private key
+
+**Step-by-Step Deployment:**
+
+1. **Install Fly.io CLI:**
    ```bash
+   # macOS/Linux
    curl -L https://fly.io/install.sh | sh
+   
+   # Windows (PowerShell)
+   iwr https://fly.io/install.ps1 -useb | iex
    ```
 
-2. **Deploy Backend:**
+2. **Login to Fly.io:**
    ```bash
-   chmod +x deploy-backend.sh
-   ./deploy-backend.sh
-   ```
-
-3. **Manual Deployment:**
-   ```bash
-   cd backend
    flyctl auth login
-   flyctl apps create domainsight-backend --generate-name
-   flyctl secrets set PRIVATE_KEY="your_testnet_private_key"
-   flyctl secrets set NODE_ENV="production"
-   flyctl deploy
    ```
 
-### Frontend Deployment (Vercel)
+3. **Create Fly.io App:**
+   ```bash
+   flyctl apps create domainsight-backend
+   ```
+
+4. **Set Environment Variables:**
+   ```bash
+   # Set your Doma testnet private key (REQUIRED for on-chain actions)
+   flyctl secrets set PRIVATE_KEY="your_testnet_private_key"
+   
+   # Optional: Set other environment variables
+   flyctl secrets set NODE_ENV="production"
+   flyctl secrets set DOMA_SUBGRAPH_URL="https://api-testnet.doma.xyz/graphql"
+   ```
+
+5. **Deploy Backend:**
+   ```bash
+   cd backend && yarn deploy:backend
+   ```
+
+6. **Verify Deployment:**
+   ```bash
+   # Check health endpoint
+   curl https://domainsight-backend.fly.dev/health
+   
+   # View logs
+   flyctl logs
+   
+   # Check status
+   flyctl status
+   ```
+
+**Backend URL:** https://domainsight-backend.fly.dev
+
+### Frontend (Vercel)
+
+**Prerequisites:**
+- Vercel account ([Sign up here](https://vercel.com))
+- Deployed backend URL
+
+**Step-by-Step Deployment:**
 
 1. **Install Vercel CLI:**
    ```bash
    npm i -g vercel
    ```
 
-2. **Deploy Frontend:**
+2. **Login to Vercel:**
    ```bash
-   chmod +x deploy-frontend.sh
-   ./deploy-frontend.sh
+   vercel login
    ```
 
-3. **Manual Deployment:**
+3. **Set Environment Variables:**
    ```bash
-   cd frontend
-   echo "REACT_APP_API_URL=https://your-backend-url.fly.dev" > .env.local
-   npm run build
-   vercel --prod
+   # Create .env.local with production backend URL
+   echo "REACT_APP_API_URL=https://domainsight-backend.fly.dev" > frontend/.env.local
    ```
+
+4. **Deploy Frontend:**
+   ```bash
+   cd frontend && yarn deploy:frontend
+   ```
+
+5. **Verify Deployment:**
+   ```bash
+   # Visit the deployed frontend
+   # Check deployment status
+   vercel ls
+   
+   # View project info
+   vercel project ls
+   ```
+
+**Frontend URL:** https://domainsight-frontend.vercel.app
+
+### Quick Deploy (Both Services)
+
+```bash
+# Deploy backend to Fly.io
+cd backend && yarn deploy:backend
+
+# Deploy frontend to Vercel
+cd frontend && yarn deploy:frontend
+
+# Test live deployment
+yarn test:live
+```
 
 ### Environment Variables
 
-**Backend (Fly.io):**
-- `PRIVATE_KEY` - Your testnet wallet private key
-- `NODE_ENV` - Set to "production"
-- `DOMA_SUBGRAPH_URL` - Doma testnet subgraph URL
-- `DOMA_TESTNET_RPC` - Doma testnet RPC URL
+**Backend (Fly.io Secrets):**
+```bash
+# Required
+PRIVATE_KEY="your_doma_testnet_private_key"
 
-**Frontend (Vercel):**
-- `REACT_APP_API_URL` - Your deployed backend URL
+# Optional
+NODE_ENV="production"
+DOMA_SUBGRAPH_URL="https://api-testnet.doma.xyz/graphql"
+DOMA_TESTNET_RPC="https://rpc-testnet.doma.xyz"
+```
+
+**Frontend (Vercel Environment Variables):**
+```bash
+# Automatically set by deployment script
+REACT_APP_API_URL="https://domainsight-backend.fly.dev"
+REACT_APP_ENVIRONMENT="production"
+REACT_APP_VERSION="1.0.0"
+```
 
 ### Testing Live Deployment
 
 ```bash
-# Test the live deployment
-node test-live.js
+# Run comprehensive live deployment tests
+yarn test:live
 
 # Test with custom URLs
-FRONTEND_URL=https://your-frontend.vercel.app BACKEND_URL=https://your-backend.fly.dev node test-live.js
+FRONTEND_URL=https://your-frontend.vercel.app BACKEND_URL=https://your-backend.fly.dev yarn test:live
 ```
+
+**Test Coverage:**
+- ✅ Backend health check and API endpoints
+- ✅ Frontend page load and functionality
+- ✅ CORS configuration validation
+- ✅ Performance metrics (<2s load time)
+- ✅ End-to-end user flow testing
+- ✅ Transaction potential tracking
 
 ## 🤝 Contributing
 
