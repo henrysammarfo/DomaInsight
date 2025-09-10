@@ -9,6 +9,7 @@ import WalletConnect from './components/WalletConnect';
 import LoadingSpinner from './components/LoadingSpinner';
 import ErrorBoundary from './components/ErrorBoundary';
 import DomainFilters from './components/DomainFilters';
+import Filters from './components/Filters';
 import './App.css';
 
 // Apollo Client setup for Doma subgraph
@@ -51,12 +52,13 @@ const GET_TRENDS = gql`
 const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:3000';
 
 // Domain Scoring Component
-function DomainScorer({ onScoreUpdate }) {
+function DomainScorer({ onScoreUpdate, filters = {} }) {
   const [domainName, setDomainName] = useState('');
   const [score, setScore] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [recommendations, setRecommendations] = useState([]);
+  const [filteredDomains, setFilteredDomains] = useState([]);
 
   const scoreDomain = async () => {
     if (!domainName.trim()) {
@@ -113,6 +115,64 @@ function DomainScorer({ onScoreUpdate }) {
     if (score >= 40) return 'text-orange-600 bg-orange-100 border-orange-200';
     return 'text-red-600 bg-red-100 border-red-200';
   };
+
+  // Apply filters to domains
+  const applyFilters = (domains, filters) => {
+    if (!domains || domains.length === 0) return domains;
+    
+    return domains.filter(domain => {
+      // TLD filter
+      if (filters.tld && filters.tld !== 'all') {
+        const domainTld = domain.name?.split('.').pop();
+        if (domainTld !== filters.tld) return false;
+      }
+      
+      // Score range filter
+      if (filters.scoreRange && filters.scoreRange !== 'all') {
+        const domainScore = domain.score || 0;
+        switch (filters.scoreRange) {
+          case 'high':
+            if (domainScore < 80) return false;
+            break;
+          case 'medium':
+            if (domainScore < 60 || domainScore >= 80) return false;
+            break;
+          case 'low':
+            if (domainScore >= 60) return false;
+            break;
+        }
+      }
+      
+      // Status filter
+      if (filters.status && filters.status !== 'all') {
+        const domainStatus = getDomainStatus(domain.expiryDate);
+        if (domainStatus !== filters.status) return false;
+      }
+      
+      return true;
+    });
+  };
+
+  // Get domain status based on expiry date
+  const getDomainStatus = (expiryDate) => {
+    if (!expiryDate) return 'unknown';
+    
+    const now = new Date();
+    const expiry = new Date(expiryDate * 1000);
+    const daysUntilExpiry = Math.ceil((expiry - now) / (1000 * 60 * 60 * 24));
+    
+    if (daysUntilExpiry < 0) return 'expired';
+    if (daysUntilExpiry <= 7) return 'expiring';
+    return 'active';
+  };
+
+  // Update filtered domains when filters change
+  useEffect(() => {
+    if (score && score.domains) {
+      const filtered = applyFilters(score.domains, filters);
+      setFilteredDomains(filtered);
+    }
+  }, [filters, score]);
 
   const getScoreLabel = (score) => {
     if (score >= 80) return 'Premium';
@@ -563,6 +623,11 @@ function App() {
   const [currentScore, setCurrentScore] = useState(null);
   const [actionHistory, setActionHistory] = useState([]);
   const [walletAddress, setWalletAddress] = useState('');
+  const [filters, setFilters] = useState({
+    tld: 'all',
+    scoreRange: 'all',
+    status: 'all'
+  });
 
   const handleScoreUpdate = (score) => {
     setCurrentScore(score);
@@ -580,6 +645,11 @@ function App() {
   const handleWalletDisconnect = () => {
     setWalletAddress('');
     console.log('Wallet disconnected');
+  };
+
+  const handleFiltersChange = (newFilters) => {
+    setFilters(newFilters);
+    console.log('Filters updated:', newFilters);
   };
 
   return (
@@ -609,10 +679,21 @@ function App() {
 
         {/* Main Content */}
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          {/* Enhanced Filters Section */}
+          <div className="mb-8">
+            <Filters 
+              onFiltersChange={handleFiltersChange}
+              currentFilters={filters}
+            />
+          </div>
+
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {/* Left Column - Domain Scoring & Recommendations */}
             <div className="lg:col-span-2 space-y-8">
-              <DomainScorer onScoreUpdate={handleScoreUpdate} />
+              <DomainScorer 
+                onScoreUpdate={handleScoreUpdate}
+                filters={filters}
+              />
               <Recommendations 
                 score={currentScore} 
                 onActionTrigger={handleActionTrigger}
