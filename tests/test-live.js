@@ -7,7 +7,7 @@ const https = require('https');
 // Configuration
 const FRONTEND_URL = 'https://domainsight-frontend.vercel.app';
 const BACKEND_URL = 'https://domainsight-backend.fly.dev';
-const TEST_DOMAIN = 'crypto.eth';
+const TEST_DOMAIN = 'johnify.io';
 const TEST_INVALID_DOMAIN = 'invalid-domain-that-does-not-exist.eth';
 
 // Test timeout

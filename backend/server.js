@@ -23,8 +23,9 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
-// Doma testnet subgraph endpoint
+// Doma testnet subgraph endpoint with real API key
 const DOMA_SUBGRAPH_URL = 'https://api-testnet.doma.xyz/graphql';
+const DOMA_API_KEY = process.env.DOMA_API_KEY || 'v1.2ab2b25922189b0a4eae6015f4e4808a2d8b40dec8c9d04e29281a82d9f2f0f1';
 
 // Multi-chain support - Doma state sync endpoints
 const CHAIN_ENDPOINTS = {
@@ -36,6 +37,18 @@ const CHAIN_ENDPOINTS = {
 
 // Doma testnet RPC and contract addresses
 const DOMA_TESTNET_RPC = 'https://rpc-testnet.doma.xyz';
+
+// Real tokenized domains for testing
+const REAL_TOKENIZED_DOMAINS = [
+  'johnify.io',
+  'johnventures.io', 
+  'insightstream.io',
+  'johnica.io',
+  'insightwise.io',
+  'estatewise.io',
+  'coolrealm.io',
+  'orgrealm.io'
+];
 const DOMA_CONTRACTS = {
   testnet: {
     registry: '0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e', // ENS Registry
@@ -196,6 +209,11 @@ app.post('/score-domain', async (req, res) => {
     const response = await axios.post(DOMA_SUBGRAPH_URL, {
       query,
       variables: { name: domainName }
+    }, {
+      headers: {
+        'Authorization': `Bearer ${DOMA_API_KEY}`,
+        'Content-Type': 'application/json'
+      }
     });
 
     const domainData = response.data.data?.name;
@@ -274,7 +292,12 @@ app.get('/get-trends', async (req, res) => {
       }
     `;
 
-    const response = await axios.post(DOMA_SUBGRAPH_URL, { query });
+    const response = await axios.post(DOMA_SUBGRAPH_URL, { query }, {
+      headers: {
+        'Authorization': `Bearer ${DOMA_API_KEY}`,
+        'Content-Type': 'application/json'
+      }
+    });
     const namesData = response.data.data?.names || [];
 
     if (namesData.length === 0) {
@@ -723,7 +746,12 @@ async function checkExpiringDomains() {
       }
     `;
 
-    const response = await axios.post(DOMA_SUBGRAPH_URL, { query });
+    const response = await axios.post(DOMA_SUBGRAPH_URL, { query }, {
+      headers: {
+        'Authorization': `Bearer ${DOMA_API_KEY}`,
+        'Content-Type': 'application/json'
+      }
+    });
     const namesData = response.data.data?.names || [];
 
     const expiringDomains = [];
@@ -970,7 +998,12 @@ app.post('/check-expiring-domains', async (req, res) => {
       }
     `;
 
-    const response = await axios.post(DOMA_SUBGRAPH_URL, { query });
+    const response = await axios.post(DOMA_SUBGRAPH_URL, { query }, {
+      headers: {
+        'Authorization': `Bearer ${DOMA_API_KEY}`,
+        'Content-Type': 'application/json'
+      }
+    });
     const namesData = response.data.data?.names || [];
 
     const expiringDomains = [];
@@ -1186,7 +1219,9 @@ app.get('/health', (req, res) => {
     multiChain: true,
     supportedChains: Object.keys(CHAIN_ENDPOINTS),
     wallet: wallet ? wallet.address : null,
-    onChainActions: !!wallet
+    onChainActions: !!wallet,
+    realDomains: REAL_TOKENIZED_DOMAINS.length,
+    apiKeyConfigured: !!DOMA_API_KEY
   });
 });
 

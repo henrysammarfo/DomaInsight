@@ -3,7 +3,7 @@ const puppeteer = require('puppeteer');
 // Configuration
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3001';
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3000';
-const TEST_DOMAIN = 'crypto.eth';
+const TEST_DOMAIN = 'johnify.io';
 const TEST_INVALID_DOMAIN = 'invalid-domain-that-does-not-exist.eth';
 
 // Test timeout
