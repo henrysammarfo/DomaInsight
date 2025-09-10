@@ -8,8 +8,8 @@ import WalletConnect from './components/WalletConnect';
 import LoadingSpinner from './components/LoadingSpinner';
 import ErrorBoundary from './components/ErrorBoundary';
 import ErrorMessage from './components/ErrorMessage';
-import DomainFilters from './components/DomainFilters';
 import Filters from './components/Filters';
+import Alerts from './components/Alerts';
 import './App.css';
 
 // Apollo Client setup for Doma subgraph
@@ -422,154 +422,8 @@ function TrendAnalytics() {
   );
 }
 
-// Alerts Component
-function Alerts() {
-  const [alerts, setAlerts] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [errorType, setErrorType] = useState('general');
-  const [filters, setFilters] = useState({
-    priority: 'all',
-    tld: 'all',
-    status: 'all'
-  });
-
-  const fetchAlerts = async (isRetry = false) => {
-    setLoading(true);
-    setError(null);
-    setErrorType('general');
-    
-    try {
-      const response = await fetch(`${API_BASE}/get-alerts`);
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-      
-      const data = await response.json();
-      
-      if (data.error) {
-        setError(data.error);
-        setErrorType('subgraph');
-        return;
-      }
-      
-      setAlerts(data.alerts || []);
-    } catch (error) {
-      console.error('Failed to fetch alerts:', error);
-      
-      if (error.message.includes('Failed to fetch') || error.name === 'TypeError') {
-        setError('Unable to connect to backend for alerts');
-        setErrorType('network');
-      } else if (error.message.includes('subgraph') || error.message.includes('GraphQL')) {
-        setError('Unable to load alerts from Doma subgraph');
-        setErrorType('subgraph');
-      } else {
-        setError(error.message);
-        setErrorType('general');
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleRetry = () => {
-    fetchAlerts(true);
-  };
-
-  useEffect(() => {
-    fetchAlerts();
-    const interval = setInterval(fetchAlerts, 30000); // Poll every 30 seconds
-    return () => clearInterval(interval);
-  }, []);
-
-  const handleFilterChange = (filterType, value) => {
-    if (value === 'clear') {
-      setFilters({ priority: 'all', tld: 'all', status: 'all' });
-    } else {
-      setFilters(prev => ({ ...prev, [filterType]: value }));
-    }
-  };
-
-  const filteredAlerts = alerts.filter(alert => {
-    if (filters.priority !== 'all' && alert.priority !== filters.priority) return false;
-    if (filters.tld !== 'all' && alert.tld !== filters.tld) return false;
-    if (filters.status !== 'all') {
-      if (filters.status === 'expiring' && alert.daysUntilExpiry > 7) return false;
-      if (filters.status === 'active' && alert.daysUntilExpiry <= 7) return false;
-    }
-    return true;
-  });
-
-  return (
-    <motion.div 
-      className="bg-white rounded-xl shadow-lg p-6"
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5 }}
-    >
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold text-gray-800">Domain Alerts</h2>
-        <motion.button
-          onClick={() => fetchAlerts()}
-          className="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors duration-200"
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-        >
-          Refresh
-        </motion.button>
-      </div>
-
-      <DomainFilters filters={filters} onFilterChange={handleFilterChange} />
-
-      <AnimatePresence>
-        {error && (
-          <ErrorMessage 
-            error={error} 
-            type={errorType}
-            onRetry={handleRetry}
-          />
-        )}
-      </AnimatePresence>
-
-      {loading ? (
-        <LoadingSpinner text="Loading alerts..." color="purple" />
-      ) : (
-        <div className="space-y-4">
-          {filteredAlerts.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">No alerts found</div>
-          ) : (
-            filteredAlerts.map((alert, index) => (
-              <motion.div
-                key={index}
-                className="p-4 border border-gray-200 rounded-lg"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.1 }}
-              >
-                <div className="flex justify-between items-center">
-                  <div>
-                    <h3 className="font-semibold text-gray-800">{alert.domainName}</h3>
-                    <p className="text-sm text-gray-600">
-                      {alert.daysUntilExpiry} days until expiry
-                    </p>
-                  </div>
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                    alert.priority === 'high' ? 'bg-red-100 text-red-800' :
-                    alert.priority === 'medium' ? 'bg-yellow-100 text-yellow-800' :
-                    'bg-green-100 text-green-800'
-                  }`}>
-                    {alert.priority}
-                  </span>
-                </div>
-              </motion.div>
-            ))
-          )}
-        </div>
-      )}
-    </motion.div>
-  );
-}
+// Legacy Alerts Component (replaced by new Alerts.js)
+// This component is now imported from './components/Alerts'
 
 // Action History Component
 function ActionHistory({ history }) {
