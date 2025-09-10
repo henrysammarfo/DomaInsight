@@ -29,6 +29,7 @@
     "test:e2e": "jest --testPathPattern=tests/test-e2e.js --detectOpenHandles --forceExit",
     "test:e2e:watch": "jest --testPathPattern=tests/test-e2e.js --watch --detectOpenHandles",
     "test:e2e:ci": "jest --testPathPattern=tests/test-e2e.js --ci --detectOpenHandles --forceExit",
+    "deploy:frontend": "node scripts/deploy.js",
     "eject": "react-scripts eject",
     "dev": "react-scripts start"
   },
